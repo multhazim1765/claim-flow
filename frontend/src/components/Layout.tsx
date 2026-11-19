@@ -28,6 +28,10 @@ export function Layout() {
           <NavLink to="/claims">All claims</NavLink>
           <NavLink to="/claims/new">New claim</NavLink>
 
+          <div className="nav-label">Revenue Cycle</div>
+          <NavLink to="/eligibility">Eligibility</NavLink>
+          <NavLink to="/denials">Denials & Appeals</NavLink>
+
           <div className="nav-label">Reference data</div>
           <NavLink to="/patients">Patients</NavLink>
           <NavLink to="/payers">Payers</NavLink>

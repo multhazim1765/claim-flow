@@ -11,6 +11,8 @@ import PatientDetailPage from './pages/PatientDetailPage';
 import PayersPage from './pages/PayersPage';
 import ProvidersPage from './pages/ProvidersPage';
 import RoadmapPage from './pages/RoadmapPage';
+import EligibilityPage from './pages/EligibilityPage';
+import DenialsPage from './pages/DenialsPage';
 import type { ReactElement } from 'react';
 
 function RequireAuth({ children }: { children: ReactElement }) {
@@ -32,6 +34,8 @@ function Router() {
         <Route path="/patients/:id" element={<PatientDetailPage />} />
         <Route path="/payers" element={<PayersPage />} />
         <Route path="/providers" element={<ProvidersPage />} />
+        <Route path="/eligibility" element={<EligibilityPage />} />
+        <Route path="/denials" element={<DenialsPage />} />
         <Route path="/roadmap" element={<RoadmapPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

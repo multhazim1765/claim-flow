@@ -1,10 +1,27 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
-import type { Claim, ClaimStatus, StatusHistoryEntry } from '../api/types';
+import type {
+  AppealOutcome,
+  AppealResponse,
+  Claim,
+  ClaimStatus,
+  DenialWorklistItem,
+  FileAppealInput,
+  PageResponse,
+  RecordOutcomeInput,
+  StatusHistoryEntry,
+} from '../api/types';
 import { PageHeader } from '../components/Layout';
 import {
-  Card, DateText, DateTimeText, ErrorAlert, Loading, Modal, Money, StatusBadge,
+  Card,
+  DateText,
+  DateTimeText,
+  ErrorAlert,
+  Loading,
+  Modal,
+  Money,
+  StatusBadge,
 } from '../components/Common';
 import { useAuth } from '../auth/AuthContext';
 
@@ -13,6 +30,63 @@ const REASON_REQUIRED: ClaimStatus[] = ['REJECTED', 'DENIED', 'VOID'];
 /** Transitions that must carry money. */
 const PAYMENT_REQUIRED: ClaimStatus[] = ['PAID', 'PARTIALLY_PAID'];
 
+const APPEAL_OUTCOMES: { value: AppealOutcome; label: string; desc: string }[] = [
+  { value: 'OVERTURNED', label: 'Overturned (Approved)', desc: 'Payer overturned denial in full; claim approved for payment.' },
+  { value: 'PARTIAL', label: 'Partially Overturned', desc: 'Payer approved a portion of the denied charges.' },
+  { value: 'UPHELD', label: 'Upheld (Denial Maintained)', desc: 'Payer reaffirmed the denial; appeal rejected.' },
+  { value: 'WITHDRAWN', label: 'Withdrawn', desc: 'Provider / biller withdrew the appeal.' },
+];
+
+function OutcomeBadge({ outcome }: { outcome: AppealOutcome | null }) {
+  if (!outcome) {
+    return (
+      <span
+        className="badge"
+        style={{
+          backgroundColor: '#e6eefa',
+          color: '#1d4373',
+          fontWeight: 600,
+          fontSize: '11px',
+          padding: '2px 8px',
+          borderRadius: '999px',
+        }}
+      >
+        Pending Decision
+      </span>
+    );
+  }
+
+  let bg = '#eceff3';
+  let color = '#4a5462';
+
+  if (outcome === 'OVERTURNED') {
+    bg = '#e2f4ee';
+    color = '#13795b';
+  } else if (outcome === 'PARTIAL') {
+    bg = '#fdf1dc';
+    color = '#8a5a06';
+  } else if (outcome === 'UPHELD') {
+    bg = '#fdeaea';
+    color = '#b32020';
+  }
+
+  return (
+    <span
+      className="badge"
+      style={{
+        backgroundColor: bg,
+        color,
+        fontWeight: 600,
+        fontSize: '11px',
+        padding: '2px 8px',
+        borderRadius: '999px',
+      }}
+    >
+      {outcome}
+    </span>
+  );
+}
+
 export default function ClaimDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -20,9 +94,12 @@ export default function ClaimDetailPage() {
 
   const [claim, setClaim] = useState<Claim | null>(null);
   const [history, setHistory] = useState<StatusHistoryEntry[]>([]);
+  const [appeals, setAppeals] = useState<AppealResponse[]>([]);
+  const [denials, setDenials] = useState<DenialWorklistItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Generic transition modal state
   const [target, setTarget] = useState<ClaimStatus | null>(null);
   const [reason, setReason] = useState('');
   const [allowed, setAllowed] = useState('');
@@ -30,16 +107,38 @@ export default function ClaimDetailPage() {
   const [busy, setBusy] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
 
+  // File appeal modal state
+  const [showAppealModal, setShowAppealModal] = useState(false);
+  const [appealNarrative, setAppealNarrative] = useState('');
+  const [appealDays, setAppealDays] = useState(45);
+  const [appealBusy, setAppealBusy] = useState(false);
+  const [appealError, setAppealError] = useState<string | null>(null);
+
+  // Record outcome modal state
+  const [outcomeTarget, setOutcomeTarget] = useState<AppealResponse | null>(null);
+  const [outcomeVal, setOutcomeVal] = useState<AppealOutcome>('OVERTURNED');
+  const [decidedOn, setDecidedOn] = useState(() => new Date().toISOString().slice(0, 10));
+  const [recoveredAmount, setRecoveredAmount] = useState('');
+  const [decisionNotes, setDecisionNotes] = useState('');
+  const [outcomeBusy, setOutcomeBusy] = useState(false);
+  const [outcomeError, setOutcomeError] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     try {
-      const [c, h] = await Promise.all([
+      const [c, h, a, d] = await Promise.all([
         api<Claim>(`/claims/${id}`),
         api<StatusHistoryEntry[]>(`/claims/${id}/history`),
+        api<AppealResponse[]>(`/claims/${id}/appeals`),
+        api<PageResponse<DenialWorklistItem>>('/denials', { query: { size: 100 } }).catch(() => null),
       ]);
       setClaim(c);
       setHistory(h);
+      setAppeals(a);
+      if (d) {
+        setDenials(d.content.filter((item) => item.claimId === Number(id)));
+      }
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : 'Could not load this claim.');
@@ -48,13 +147,25 @@ export default function ClaimDetailPage() {
     }
   }, [id]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const openTransition = (status: ClaimStatus) => {
+    // If user clicked APPEALED, route them to the dedicated File Appeal modal
+    if (status === 'APPEALED') {
+      setAppealNarrative('');
+      setAppealDays(45);
+      setAppealError(null);
+      setShowAppealModal(true);
+      return;
+    }
     setTarget(status);
     setReason('');
     setModalError(null);
-    setAllowed(claim && claim.allowedAmount > 0 ? String(claim.allowedAmount) : String(claim?.totalCharge ?? ''));
+    setAllowed(
+      claim && claim.allowedAmount > 0 ? String(claim.allowedAmount) : String(claim?.totalCharge ?? '')
+    );
     setPaid('');
   };
 
@@ -81,6 +192,71 @@ export default function ClaimDetailPage() {
     }
   };
 
+  const submitFileAppeal = async () => {
+    if (!claim) return;
+    if (!appealNarrative.trim() || appealNarrative.trim().length < 5) {
+      setAppealError('Please provide a substantive narrative explaining the appeal justification (at least 5 characters).');
+      return;
+    }
+
+    setAppealBusy(true);
+    setAppealError(null);
+    try {
+      // Find open denial ID if available
+      const openDenial = denials.find((d) => d.status === 'OPEN');
+      const payload: FileAppealInput = {
+        denialId: openDenial ? openDenial.id : null,
+        narrative: appealNarrative.trim(),
+        responseDeadlineDays: appealDays || 45,
+      };
+      await api(`/claims/${claim.id}/appeal`, {
+        method: 'POST',
+        body: payload,
+      });
+      setShowAppealModal(false);
+      setAppealNarrative('');
+      await load();
+    } catch (err) {
+      setAppealError(err instanceof ApiError ? err.detail : 'Failed to file appeal.');
+    } finally {
+      setAppealBusy(false);
+    }
+  };
+
+  const openRecordOutcome = (appeal: AppealResponse) => {
+    setOutcomeTarget(appeal);
+    setOutcomeVal('OVERTURNED');
+    setDecidedOn(new Date().toISOString().slice(0, 10));
+    setRecoveredAmount(claim ? String(claim.totalCharge) : '');
+    setDecisionNotes('');
+    setOutcomeError(null);
+  };
+
+  const submitRecordOutcome = async () => {
+    if (!outcomeTarget) return;
+    setOutcomeBusy(true);
+    setOutcomeError(null);
+    try {
+      const recAmt = recoveredAmount ? parseFloat(recoveredAmount) : null;
+      const payload: RecordOutcomeInput = {
+        outcome: outcomeVal,
+        decidedOn,
+        recoveredAmount: recAmt !== null && !isNaN(recAmt) ? recAmt : null,
+        decisionNotes: decisionNotes.trim() || null,
+      };
+      await api(`/appeals/${outcomeTarget.id}/outcome`, {
+        method: 'POST',
+        body: payload,
+      });
+      setOutcomeTarget(null);
+      await load();
+    } catch (err) {
+      setOutcomeError(err instanceof ApiError ? err.detail : 'Failed to record appeal decision.');
+    } finally {
+      setOutcomeBusy(false);
+    }
+  };
+
   const remove = async () => {
     if (!claim) return;
     try {
@@ -93,6 +269,15 @@ export default function ClaimDetailPage() {
 
   if (loading) return <><PageHeader title="Claim" /><div className="content"><Loading /></div></>;
   if (!claim) return <><PageHeader title="Claim" /><div className="content"><ErrorAlert message={error} /></div></>;
+
+  // Filter out outcome-driven transitions if claim is currently APPEALED (since outcomes go through /outcome endpoint)
+  const genericTransitions =
+    claim.status === 'APPEALED'
+      ? claim.allowedTransitions.filter((s) => s === 'VOID')
+      : claim.allowedTransitions;
+
+  const pendingAppeal = appeals.find((a) => a.outcome === null);
+  const activeDenial = denials.find((d) => d.status === 'OPEN' || d.status === 'APPEALED');
 
   return (
     <>
@@ -115,33 +300,206 @@ export default function ClaimDetailPage() {
       <div className="content">
         <ErrorAlert message={error} />
 
-        {canWrite && claim.allowedTransitions.length > 0 && (
+        {/* Workflow Actions */}
+        {canWrite && (genericTransitions.length > 0 || claim.status === 'DENIED' || claim.status === 'APPEALED') && (
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-head">
-              <h2>Move this claim forward</h2>
+              <h2>Workflow & Actions</h2>
               <StatusBadge status={claim.status} />
             </div>
             <div className="card-body">
-              <div className="btn-row">
-                {claim.allowedTransitions.map((s) => (
+              <div className="btn-row" style={{ alignItems: 'center' }}>
+                {/* Dedicated Action for DENIED claims: File Appeal */}
+                {claim.status === 'DENIED' && (
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      setAppealNarrative('');
+                      setAppealDays(45);
+                      setAppealError(null);
+                      setShowAppealModal(true);
+                    }}
+                  >
+                    File Appeal
+                  </button>
+                )}
+
+                {/* Dedicated Action for APPEALED claims: Record Decision */}
+                {claim.status === 'APPEALED' && pendingAppeal && (
+                  <button
+                    className="btn"
+                    onClick={() => openRecordOutcome(pendingAppeal)}
+                  >
+                    Record Payer Decision ({pendingAppeal.levelDescription})
+                  </button>
+                )}
+
+                {/* Generic Transitions */}
+                {genericTransitions.map((s) => (
                   <button key={s} className="btn btn-secondary" onClick={() => openTransition(s)}>
-                    {s.replace('_', ' ')}
+                    {s === 'APPEALED' ? 'File Appeal' : s.replace('_', ' ')}
                   </button>
                 ))}
               </div>
-              {claim.status === 'DENIED' && (
-                <div className="alert alert-warn mt-16" style={{ marginBottom: 0 }}>
-                  Appealing a denial is a <span className="pill pill-phase2">Phase 2</span> capability.
-                  The API returns 501 with a pointer to the written spec.
-                </div>
-              )}
             </div>
           </div>
         )}
 
         {!canWrite && (
           <div className="alert alert-info">
-            You are signed in as a viewer. Claim actions are hidden here and rejected by the API.
+            You are signed in as a viewer. Claim and appeal actions are restricted to billing and administrative roles.
+          </div>
+        )}
+
+        {/* Denial & Appeals Section */}
+        {(denials.length > 0 || appeals.length > 0 || claim.status === 'DENIED' || claim.status === 'APPEALED') && (
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-head">
+              <h2>Denial Management & Appeals</h2>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {activeDenial && (
+                  <span className="pill" style={{ fontWeight: 600 }}>
+                    {activeDenial.denialCategory.replace('_', ' ')} &middot; {activeDenial.denialCode}
+                  </span>
+                )}
+                <StatusBadge status={claim.status} />
+              </div>
+            </div>
+            <div className="card-body">
+              {/* Active Denial Card Summary */}
+              {activeDenial && (
+                <div
+                  style={{
+                    padding: '12px 14px',
+                    background: 'var(--surface-2)',
+                    borderRadius: 'var(--radius-s)',
+                    marginBottom: 16,
+                  }}
+                >
+                  <div className="grid grid-4" style={{ rowGap: 8 }}>
+                    <div>
+                      <div className="faint" style={{ fontSize: 11, textTransform: 'uppercase' }}>CARC / RARC</div>
+                      <div style={{ fontWeight: 600 }}>
+                        {activeDenial.denialCode}
+                        {activeDenial.remittanceCode ? ` / ${activeDenial.remittanceCode}` : ''}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="faint" style={{ fontSize: 11, textTransform: 'uppercase' }}>Denied Amount</div>
+                      <div style={{ fontWeight: 600 }}><Money value={activeDenial.amount} /></div>
+                    </div>
+                    <div>
+                      <div className="faint" style={{ fontSize: 11, textTransform: 'uppercase' }}>Appeal Deadline</div>
+                      <div style={{ fontWeight: 600 }}>
+                        <DateText value={activeDenial.appealDeadline} />{' '}
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: activeDenial.daysRemaining < 0 ? 'var(--danger)' : activeDenial.daysRemaining <= 7 ? 'var(--warn)' : 'var(--text-muted)',
+                          }}
+                        >
+                          ({activeDenial.daysRemaining < 0 ? `${Math.abs(activeDenial.daysRemaining)}d overdue` : `${activeDenial.daysRemaining}d remaining`})
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="faint" style={{ fontSize: 11, textTransform: 'uppercase' }}>Denial Status</div>
+                      <div style={{ fontWeight: 600 }}>{activeDenial.status}</div>
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                    <strong>Reason:</strong> {activeDenial.reason}
+                  </div>
+                </div>
+              )}
+
+              {/* Appeal Progression Timeline */}
+              <h3 style={{ marginBottom: 12 }}>Appeal Progression</h3>
+              {appeals.length === 0 ? (
+                <div className="muted" style={{ fontSize: 13, padding: '8px 0' }}>
+                  No appeals have been filed for this claim yet.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {appeals.map((a) => (
+                    <div
+                      key={a.id}
+                      style={{
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-s)',
+                        padding: '12px 14px',
+                        background: a.outcome === null ? 'var(--surface-2)' : 'var(--surface)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontWeight: 700, fontSize: 13 }}>
+                            Level {a.level}: {a.levelDescription}
+                          </span>
+                          <OutcomeBadge outcome={a.outcome} />
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                          Filed: <DateText value={a.filedOn} /> by {a.filedBy}
+                        </div>
+                      </div>
+
+                      <div style={{ fontSize: 12, marginBottom: 8, color: 'var(--text-muted)' }}>
+                        <strong>Payer Response Due:</strong> <DateText value={a.deadline} />
+                      </div>
+
+                      <div style={{ fontSize: 13, background: 'var(--surface)', padding: '8px 10px', borderRadius: 4, border: '1px solid var(--border)' }}>
+                        <strong>Appeal Narrative:</strong>
+                        <div style={{ marginTop: 2, whiteSpace: 'pre-wrap' }}>{a.narrative}</div>
+                      </div>
+
+                      {/* Outcome Details */}
+                      {a.outcome !== null && (
+                        <div
+                          style={{
+                            marginTop: 10,
+                            padding: '8px 10px',
+                            background: a.outcome === 'OVERTURNED' ? '#e2f4ee' : a.outcome === 'PARTIAL' ? '#fdf1dc' : '#eceff3',
+                            borderRadius: 4,
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 600 }}>
+                            <span>
+                              Decision: {a.outcome} &middot; Decided: <DateText value={a.decidedOn} />
+                            </span>
+                            {a.recoveredAmount !== null && (
+                              <span>
+                                Recovered / Adjudicated: <Money value={a.recoveredAmount} />
+                              </span>
+                            )}
+                          </div>
+                          {a.decisionNotes && (
+                            <div style={{ fontSize: 12, marginTop: 4, color: 'var(--text)' }}>
+                              <strong>Notes:</strong> {a.decisionNotes}
+                            </div>
+                          )}
+                          <div style={{ fontSize: 11, marginTop: 4, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                            Note: Adjudicated amount reflects payer-accepted liability. Cash receipt and payment posting are recorded separately upon 835 remittance receipt.
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Pending Outcome Action */}
+                      {a.outcome === null && canWrite && (
+                        <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            onClick={() => openRecordOutcome(a)}
+                          >
+                            Record Payer Decision
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -247,6 +605,7 @@ export default function ClaimDetailPage() {
         </div>
       </div>
 
+      {/* Generic Transition Modal */}
       {target && (
         <Modal
           title={`Move to ${target.replace('_', ' ')}`}
@@ -292,6 +651,148 @@ export default function ClaimDetailPage() {
             {REASON_REQUIRED.includes(target) && (
               <div className="field-hint">Required. It is written to the permanent audit trail.</div>
             )}
+          </div>
+        </Modal>
+      )}
+
+      {/* File Appeal Modal */}
+      {showAppealModal && (
+        <Modal
+          title={`File Appeal — Claim ${claim.claimNumber}`}
+          onClose={() => setShowAppealModal(false)}
+          footer={
+            <>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowAppealModal(false)}
+                disabled={appealBusy}
+              >
+                Cancel
+              </button>
+              <button className="btn" onClick={submitFileAppeal} disabled={appealBusy}>
+                {appealBusy ? 'Submitting...' : 'File Appeal'}
+              </button>
+            </>
+          }
+        >
+          {appealError && <div className="alert alert-error">{appealError}</div>}
+
+          <div className="field">
+            <label htmlFor="appealNarrative">Appeal Medical / Contractual Narrative *</label>
+            <textarea
+              id="appealNarrative"
+              rows={4}
+              placeholder="State the clinical, medical necessity, or contractual justification for reversing the denial..."
+              value={appealNarrative}
+              onChange={(e) => setAppealNarrative(e.target.value)}
+              autoFocus
+            />
+            <div className="field-hint">Required (min 5 characters). Documents the basis of appeal for payer review.</div>
+          </div>
+
+          <div className="field">
+            <label htmlFor="appealDays">Payer Response Deadline (Days)</label>
+            <input
+              id="appealDays"
+              type="number"
+              min={1}
+              max={365}
+              value={appealDays}
+              onChange={(e) => setAppealDays(Number(e.target.value))}
+            />
+            <div className="field-hint">Contractual turnaround time window (default 45 days).</div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Record Outcome Modal */}
+      {outcomeTarget && (
+        <Modal
+          title={`Record Payer Decision — Level ${outcomeTarget.level}`}
+          onClose={() => setOutcomeTarget(null)}
+          footer={
+            <>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setOutcomeTarget(null)}
+                disabled={outcomeBusy}
+              >
+                Cancel
+              </button>
+              <button className="btn" onClick={submitRecordOutcome} disabled={outcomeBusy}>
+                {outcomeBusy ? 'Saving...' : 'Record Outcome'}
+              </button>
+            </>
+          }
+        >
+          {outcomeError && <div className="alert alert-error">{outcomeError}</div>}
+
+          <div className="field">
+            <label htmlFor="outcomeSelect">Payer Decision Outcome *</label>
+            <select
+              id="outcomeSelect"
+              value={outcomeVal}
+              onChange={(e) => setOutcomeVal(e.target.value as AppealOutcome)}
+            >
+              {APPEAL_OUTCOMES.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <div className="field-hint">
+              {APPEAL_OUTCOMES.find((o) => o.value === outcomeVal)?.desc}
+            </div>
+          </div>
+
+          <div className="grid grid-2">
+            <div className="field">
+              <label htmlFor="decidedOn">Decided On *</label>
+              <input
+                id="decidedOn"
+                type="date"
+                value={decidedOn}
+                onChange={(e) => setDecidedOn(e.target.value)}
+              />
+            </div>
+
+            {(outcomeVal === 'OVERTURNED' || outcomeVal === 'PARTIAL') && (
+              <div className="field">
+                <label htmlFor="recoveredAmt">Adjudicated / Recovered Amount ($)</label>
+                <input
+                  id="recoveredAmt"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={recoveredAmount}
+                  onChange={(e) => setRecoveredAmount(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="field">
+            <label htmlFor="decisionNotes">Payer Determination Notes</label>
+            <textarea
+              id="decisionNotes"
+              rows={3}
+              placeholder="Explanations or reference numbers provided in the payer's determination letter..."
+              value={decisionNotes}
+              onChange={(e) => setDecisionNotes(e.target.value)}
+            />
+          </div>
+
+          <div
+            style={{
+              padding: '8px 12px',
+              background: 'var(--surface-2)',
+              borderRadius: 'var(--radius-s)',
+              fontSize: 12,
+              color: 'var(--text-muted)',
+            }}
+          >
+            <strong>Financial Separation:</strong> Recording an overturned appeal transitions the claim to <code>ACCEPTED</code>. Actual payment receipt and cash balance updates remain separated until remittance posting.
           </div>
         </Modal>
       )}

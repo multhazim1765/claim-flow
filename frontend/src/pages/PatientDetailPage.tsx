@@ -56,7 +56,7 @@ export default function PatientDetailPage() {
               : (
                 <table>
                   <thead>
-                    <tr><th>Priority</th><th>Payer</th><th>Member ID</th><th>Effective</th><th>Status</th></tr>
+                    <tr><th>Priority</th><th>Payer</th><th>Member ID</th><th>Effective</th><th>Status</th><th>Action</th></tr>
                   </thead>
                   <tbody>
                     {patient.policies.map((p) => (
@@ -69,6 +69,11 @@ export default function PatientDetailPage() {
                           <span className={p.activeToday ? 'badge badge-PAID' : 'badge badge-VOID'}>
                             {p.activeToday ? 'ACTIVE' : 'TERMINATED'}
                           </span>
+                        </td>
+                        <td>
+                          <Link className="btn btn-secondary btn-sm" to={`/eligibility?patientId=${patient.id}&payerId=${p.payerId}`}>
+                            Verify
+                          </Link>
                         </td>
                       </tr>
                     ))}

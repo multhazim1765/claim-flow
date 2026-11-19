@@ -225,3 +225,179 @@ export interface StatusTransitionMap {
   descriptions: Record<string, string>;
   terminal: string[];
 }
+
+export interface EligibilityCheckRequest {
+  patientId: number;
+  payerId: number;
+  serviceDate: string;
+  serviceTypeCode?: string;
+  forceRefresh?: boolean;
+}
+
+export interface EligibilityCheckResponse {
+  id: number;
+  patientId: number;
+  patientName: string;
+  patientMrn: string;
+  payerId: number;
+  payerName: string;
+  policyMemberId: string | null;
+  active: boolean;
+  checkedAt: string;
+  planBegin: string | null;
+  planEnd: string | null;
+  copay: number | null;
+  coinsurancePercent: number | null;
+  deductibleTotal: number | null;
+  deductibleRemaining: number | null;
+  outOfPocketRemaining: number | null;
+  cached: boolean;
+  rawResponse: string | null;
+}
+
+export interface EligibilityHistoryItem {
+  id: number;
+  patientId: number;
+  patientName: string;
+  payerId: number;
+  payerName: string;
+  serviceDate: string;
+  active: boolean;
+  checkedAt: string;
+  copay: number | null;
+  coinsurancePercent: number | null;
+  deductibleRemaining: number | null;
+  cached: boolean;
+  checkedBy: string;
+}
+
+export type DenialCategory =
+  | 'AUTHORIZATION'
+  | 'MEDICAL_NECESSITY'
+  | 'TIMELY_FILING'
+  | 'BILLING_CODING'
+  | 'COVERAGE_ELIGIBILITY'
+  | 'DUPLICATE'
+  | 'OTHER';
+
+export type DenialStatus =
+  | 'OPEN'
+  | 'APPEALED'
+  | 'RESOLVED'
+  | 'WRITTEN_OFF';
+
+export type DenialUrgency =
+  | 'OVERDUE'
+  | 'CRITICAL'
+  | 'WARNING'
+  | 'NORMAL';
+
+export type AppealOutcome =
+  | 'UPHELD'
+  | 'OVERTURNED'
+  | 'PARTIAL'
+  | 'WITHDRAWN';
+
+export interface DenialWorklistItem {
+  id: number;
+  claimId: number;
+  claimNumber: string;
+  patientName: string;
+  patientMrn: string;
+  payerId: number;
+  payerName: string;
+  denialCode: string;
+  remittanceCode: string | null;
+  denialCategory: DenialCategory;
+  reason: string;
+  denialDate: string;
+  appealDeadline: string;
+  daysRemaining: number;
+  urgency: DenialUrgency;
+  amount: number;
+  status: DenialStatus;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface CategoryBreakdown {
+  category: DenialCategory;
+  description: string;
+  count: number;
+  amount: number;
+}
+
+export interface DenialSummary {
+  totalOpenDenials: number;
+  totalOpenDeniedAmount: number;
+  criticalDeadlines: number;
+  warningDeadlines: number;
+  normalDeadlines: number;
+  overdueDeadlines: number;
+  byCategory: Record<string, CategoryBreakdown>;
+}
+
+export interface DenialResponse {
+  id: number;
+  claimId: number;
+  claimNumber: string;
+  payerId: number;
+  payerName: string;
+  denialCode: string;
+  remittanceCode: string | null;
+  denialCategory: DenialCategory;
+  reason: string;
+  denialDate: string;
+  appealDeadline: string;
+  daysRemaining: number;
+  urgency: DenialUrgency;
+  amount: number;
+  status: DenialStatus;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface CreateDenialInput {
+  claimId: number;
+  payerId?: number | null;
+  denialCode: string;
+  remittanceCode?: string | null;
+  denialCategory: DenialCategory;
+  reason: string;
+  denialDate: string;
+  appealDeadline: string;
+  amount: number;
+}
+
+export interface FileAppealInput {
+  denialId?: number | null;
+  narrative: string;
+  responseDeadlineDays?: number | null;
+}
+
+export interface RecordOutcomeInput {
+  outcome: AppealOutcome;
+  decidedOn: string;
+  recoveredAmount?: number | null;
+  decisionNotes?: string | null;
+}
+
+export interface AppealResponse {
+  id: number;
+  claimId: number;
+  claimNumber: string;
+  denialId: number | null;
+  denialCode: string | null;
+  level: number;
+  levelDescription: string;
+  filedOn: string;
+  deadline: string;
+  narrative: string;
+  outcome: AppealOutcome | null;
+  decidedOn: string | null;
+  recoveredAmount: number | null;
+  decisionNotes: string | null;
+  resultingClaimStatus: ClaimStatus | null;
+  filedBy: string;
+  createdAt: string;
+}

@@ -47,9 +47,10 @@ public enum ClaimStatus {
         TRANSITIONS.put(REJECTED,       EnumSet.of(DRAFT, VOID));
         TRANSITIONS.put(ACCEPTED,       EnumSet.of(PAID, PARTIALLY_PAID, DENIED, VOID));
         TRANSITIONS.put(PARTIALLY_PAID, EnumSet.of(PAID, DENIED, VOID));
-        // DENIED -> APPEALED is Phase 2. Until then a denial can only be voided.
-        TRANSITIONS.put(DENIED,         EnumSet.of(VOID));
-        TRANSITIONS.put(APPEALED,       EnumSet.of(PAID, DENIED, VOID));
+        // DENIED can be appealed (Milestone 2.2B) or voided.
+        TRANSITIONS.put(DENIED,         EnumSet.of(APPEALED, VOID));
+        // APPEALED returns to ACCEPTED (when overturned/partial) or DENIED (when upheld/withdrawn), or VOID.
+        TRANSITIONS.put(APPEALED,       EnumSet.of(ACCEPTED, DENIED, VOID));
         TRANSITIONS.put(PAID,           EnumSet.noneOf(ClaimStatus.class));
         TRANSITIONS.put(VOID,           EnumSet.noneOf(ClaimStatus.class));
     }

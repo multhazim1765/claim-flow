@@ -38,9 +38,15 @@ public class ClaimStatusMachine {
             throw new ConflictException("Claim " + claim.getClaimNumber() + " is already " + from);
         }
 
-        // Phase 2 boundary: the appeal workflow is specified but not built.
-        if (from == ClaimStatus.DENIED && to == ClaimStatus.APPEALED) {
-            throw new NotImplementedYetException("The denial appeal workflow", "2.4");
+        // Rule 12: Generic transition endpoints cannot bypass the formal appeal workflow.
+        if (to == ClaimStatus.APPEALED) {
+            throw new BusinessRuleException(
+                    "Cannot transition directly to APPEALED via generic transition. File an appeal via POST /api/claims/{id}/appeal.");
+        }
+        if (from == ClaimStatus.APPEALED && to != ClaimStatus.VOID) {
+            throw new BusinessRuleException(
+                    "Cannot transition claim " + claim.getClaimNumber()
+                    + " from APPEALED via generic transition. Record the appeal outcome via POST /api/appeals/{id}/outcome.");
         }
 
         if (!from.canTransitionTo(to)) {
@@ -151,5 +157,35 @@ public class ClaimStatusMachine {
 
     private BigDecimal scale(BigDecimal v) {
         return v.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Drives DENIED -> APPEALED as part of a formal appeal filing.
+     * submittedAt and financial balances remain untouched.
+     */
+    public ClaimStatusHistory applyAppeal(Claim claim, String narrative, String actor) {
+        ClaimStatus from = claim.getStatus();
+        if (from != ClaimStatus.DENIED) {
+            throw new ConflictException("Cannot appeal claim " + claim.getClaimNumber()
+                    + " with status " + from + ". Only DENIED claims can be appealed.");
+        }
+        claim.setStatus(ClaimStatus.APPEALED);
+        return new ClaimStatusHistory(claim, from, ClaimStatus.APPEALED, narrative, actor);
+    }
+
+    /**
+     * Drives APPEALED -> ACCEPTED (overturned/partial) or APPEALED -> DENIED (upheld/withdrawn).
+     * Financial balances remain untouched until remittance is received.
+     */
+    public ClaimStatusHistory applyAppealOutcome(Claim claim, ClaimStatus targetStatus, String reason, String actor) {
+        ClaimStatus from = claim.getStatus();
+        if (from != ClaimStatus.APPEALED) {
+            throw new ConflictException("Claim " + claim.getClaimNumber() + " is " + from + ", not APPEALED.");
+        }
+        if (targetStatus != ClaimStatus.ACCEPTED && targetStatus != ClaimStatus.DENIED && targetStatus != ClaimStatus.VOID) {
+            throw new ConflictException("Invalid appeal outcome target status: " + targetStatus);
+        }
+        claim.setStatus(targetStatus);
+        return new ClaimStatusHistory(claim, from, targetStatus, reason, actor);
     }
 }
