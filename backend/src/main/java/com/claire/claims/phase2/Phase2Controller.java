@@ -32,17 +32,7 @@ public class Phase2Controller {
         throw new NotImplementedYetException("EDI 837P claim export", "2.1");
     }
 
-    // ----- 2.2 ERA / 835 remittance ingest -------------------------------
-
-    /**
-     * Parses an 835 remittance advice and auto-posts payments and adjustments.
-     * Spec: docs/PHASE2_HANDOFF.md section 2.2
-     */
-    @PostMapping("/api/edi/835/import")
-    @PreAuthorize("hasAnyRole('ADMIN','BILLER')")
-    public Map<String, Object> import835(@RequestParam(value = "file", required = false) MultipartFile file) {
-        throw new NotImplementedYetException("ERA 835 remittance import", "2.2");
-    }
+    // ----- 2.2 ERA / 835 remittance ingest implemented in RemittanceController -----
 
     // ----- 2.3 Eligibility (270/271) implemented in EligibilityController -----
 
