@@ -12,6 +12,8 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.stream.Collectors;
 
 /**
@@ -187,5 +189,58 @@ public class ClaimStatusMachine {
         }
         claim.setStatus(targetStatus);
         return new ClaimStatusHistory(claim, from, targetStatus, reason, actor);
+    }
+
+    /**
+     * Drives claim status transitions specifically originating from ERA 835 payment posting.
+     * Enforces valid status progressions:
+     * - SUBMITTED -> records two discrete transitions:
+     *     1. SUBMITTED -> ACCEPTED ("Payer adjudication inferred via ERA 835 remittance check <checkNumber>")
+     *     2. ACCEPTED -> PAID or PARTIALLY_PAID ("Payment of $<amount> posted from ERA 835 check <checkNumber>")
+     * - ACCEPTED -> records ACCEPTED -> PAID or PARTIALLY_PAID
+     * - PARTIALLY_PAID -> if target is PAID, records PARTIALLY_PAID -> PAID; if remaining PARTIALLY_PAID, records no transition (no-op prevented)
+     * - Rejects DRAFT, VOID, REJECTED, and DENIED.
+     * - Returns the list of generated audit transitions to persist.
+     */
+    public List<ClaimStatusHistory> applyPaymentPosting(Claim claim, ClaimStatus targetStatus,
+                                                        BigDecimal paymentAmount, String checkNumber, String actor) {
+        ClaimStatus from = claim.getStatus();
+        if (from == ClaimStatus.DRAFT || from == ClaimStatus.VOID || from == ClaimStatus.REJECTED || from == ClaimStatus.DENIED) {
+            throw new BusinessRuleException("Cannot post payment to claim " + claim.getClaimNumber() + " with status " + from);
+        }
+        if (from == ClaimStatus.PAID) {
+            throw new ConflictException("Claim " + claim.getClaimNumber() + " is already PAID.");
+        }
+        if (targetStatus != ClaimStatus.PAID && targetStatus != ClaimStatus.PARTIALLY_PAID) {
+            throw new BusinessRuleException("Invalid target status for payment posting: " + targetStatus);
+        }
+
+        List<ClaimStatusHistory> transitions = new ArrayList<>();
+        String paymentReason = String.format("Payment of $%s posted from ERA 835 check %s",
+                paymentAmount.setScale(2, RoundingMode.HALF_UP).toPlainString(), checkNumber);
+
+        if (from == ClaimStatus.SUBMITTED) {
+            // Step 1: Infer acceptance/adjudication from the ERA 835 remittance (not a separate 277CA)
+            String step1Reason = String.format(
+                    "Payer adjudication inferred via ERA 835 remittance check %s (inferred from ERA, not separate 277CA acknowledgment)",
+                    checkNumber);
+            claim.setStatus(ClaimStatus.ACCEPTED);
+            transitions.add(new ClaimStatusHistory(claim, ClaimStatus.SUBMITTED, ClaimStatus.ACCEPTED, step1Reason, actor));
+
+            // Step 2: Transition from ACCEPTED to target status
+            claim.setStatus(targetStatus);
+            transitions.add(new ClaimStatusHistory(claim, ClaimStatus.ACCEPTED, targetStatus, paymentReason, actor));
+        } else if (from == ClaimStatus.ACCEPTED) {
+            claim.setStatus(targetStatus);
+            transitions.add(new ClaimStatusHistory(claim, ClaimStatus.ACCEPTED, targetStatus, paymentReason, actor));
+        } else if (from == ClaimStatus.PARTIALLY_PAID) {
+            if (targetStatus == ClaimStatus.PAID) {
+                claim.setStatus(ClaimStatus.PAID);
+                transitions.add(new ClaimStatusHistory(claim, ClaimStatus.PARTIALLY_PAID, ClaimStatus.PAID, paymentReason, actor));
+            }
+            // If targetStatus == PARTIALLY_PAID, claim status remains PARTIALLY_PAID without no-op transition history
+        }
+
+        return transitions;
     }
 }

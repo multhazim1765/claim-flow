@@ -60,6 +60,9 @@ public class Claim {
     @Column(name = "patient_responsibility", nullable = false, precision = 12, scale = 2)
     private BigDecimal patientResponsibility = BigDecimal.ZERO;
 
+    @Column(name = "contractual_adjustment", nullable = false, precision = 12, scale = 2)
+    private BigDecimal contractualAdjustment = BigDecimal.ZERO;
+
     @Column(length = 1000)
     private String notes;
 
@@ -147,6 +150,8 @@ public class Claim {
     public void setPaidAmount(BigDecimal paidAmount) { this.paidAmount = paidAmount; }
     public BigDecimal getPatientResponsibility() { return patientResponsibility; }
     public void setPatientResponsibility(BigDecimal v) { this.patientResponsibility = v; }
+    public BigDecimal getContractualAdjustment() { return contractualAdjustment; }
+    public void setContractualAdjustment(BigDecimal v) { this.contractualAdjustment = v; }
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
     public OffsetDateTime getSubmittedAt() { return submittedAt; }
