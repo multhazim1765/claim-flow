@@ -44,17 +44,7 @@ public class Phase2Controller {
         throw new NotImplementedYetException("ERA 835 remittance import", "2.2");
     }
 
-    // ----- 2.3 Eligibility (270/271) -------------------------------------
-
-    /**
-     * Real-time coverage verification against a payer.
-     * Spec: docs/PHASE2_HANDOFF.md section 2.3
-     */
-    @PostMapping("/api/eligibility/check")
-    @PreAuthorize("hasAnyRole('ADMIN','BILLER')")
-    public Map<String, Object> checkEligibility(@RequestBody(required = false) Map<String, Object> body) {
-        throw new NotImplementedYetException("Real-time eligibility check (270/271)", "2.3");
-    }
+    // ----- 2.3 Eligibility (270/271) implemented in EligibilityController -----
 
     // ----- 2.4 Denial management and appeals -----------------------------
 
@@ -67,15 +57,6 @@ public class Phase2Controller {
     public Map<String, Object> appeal(@PathVariable Long id,
                                       @RequestBody(required = false) Map<String, Object> body) {
         throw new NotImplementedYetException("Claim appeal workflow", "2.4");
-    }
-
-    /**
-     * Denial worklist with CARC/RARC reason codes.
-     * Spec: docs/PHASE2_HANDOFF.md section 2.4
-     */
-    @GetMapping("/api/denials")
-    public List<Object> denials(@RequestParam(required = false) Long payerId) {
-        throw new NotImplementedYetException("Denial worklist", "2.4");
     }
 
     // ----- 2.5 Attachments ------------------------------------------------
