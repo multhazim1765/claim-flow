@@ -14,13 +14,25 @@ public interface PaymentLedgerRepository extends JpaRepository<PaymentLedgerEntr
 
     List<PaymentLedgerEntry> findByClaimIdOrderByPostedAtAsc(Long claimId);
 
+    List<PaymentLedgerEntry> findByClaimIdOrderByIdAsc(Long claimId);
+
     boolean existsByVoucherIdAndEntryType(Long voucherId, PaymentLedgerEntryType entryType);
 
+    boolean existsByOriginalLedgerEntryIdAndEntryType(Long originalId, PaymentLedgerEntryType entryType);
+
     List<PaymentLedgerEntry> findByVoucherId(Long voucherId);
+
+    Optional<PaymentLedgerEntry> findByVoucherIdAndEntryType(Long voucherId, PaymentLedgerEntryType entryType);
 
     Optional<PaymentLedgerEntry> findByOriginalLedgerEntryIdAndEntryType(Long originalId, PaymentLedgerEntryType entryType);
 
     @Query("SELECT COALESCE(SUM(l.amount), 0) FROM PaymentLedgerEntry l WHERE l.claim.id = :claimId AND l.entryType IN ('LEGACY_INITIAL_BALANCE', 'PAYER_PAYMENT', 'PAYER_REVERSAL', 'PATIENT_PAYMENT')")
     BigDecimal sumNetPaymentsByClaimId(@Param("claimId") Long claimId);
+
+    @Query("SELECT COALESCE(SUM(l.amount), 0) FROM PaymentLedgerEntry l WHERE l.claim.id = :claimId AND l.entryType IN ('CONTRACTUAL_WRITE_OFF', 'CONTRACTUAL_ADJUSTMENT_REVERSAL')")
+    BigDecimal sumNetContractualAdjustmentByClaimId(@Param("claimId") Long claimId);
+
+    @Query("SELECT COALESCE(SUM(l.amount), 0) FROM PaymentLedgerEntry l WHERE l.entryType = :entryType")
+    BigDecimal sumAmountByEntryType(@Param("entryType") PaymentLedgerEntryType entryType);
 }
 

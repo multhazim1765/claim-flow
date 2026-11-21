@@ -13,6 +13,10 @@ import ProvidersPage from './pages/ProvidersPage';
 import RoadmapPage from './pages/RoadmapPage';
 import EligibilityPage from './pages/EligibilityPage';
 import DenialsPage from './pages/DenialsPage';
+import RemittancePage from './pages/RemittancePage';
+import RemittanceDetailPage from './pages/RemittanceDetailPage';
+import RemittanceExceptionsPage from './pages/RemittanceExceptionsPage';
+import AnalyticsPage from './pages/AnalyticsPage';
 import type { ReactElement } from 'react';
 
 function RequireAuth({ children }: { children: ReactElement }) {
@@ -36,6 +40,10 @@ function Router() {
         <Route path="/providers" element={<ProvidersPage />} />
         <Route path="/eligibility" element={<EligibilityPage />} />
         <Route path="/denials" element={<DenialsPage />} />
+        <Route path="/remittances" element={<RemittancePage />} />
+        <Route path="/remittances/exceptions" element={<RemittanceExceptionsPage />} />
+        <Route path="/remittances/:id" element={<RemittanceDetailPage />} />
+        <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/roadmap" element={<RoadmapPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -5,6 +5,66 @@ export function StatusBadge({ status }: { status: ClaimStatus }) {
   return <span className={`badge badge-${status}`}>{status.replace('_', ' ')}</span>;
 }
 
+export function RemittanceStatusBadge({ status }: { status: string }) {
+  let bg = 'var(--neutral-soft)';
+  let color = 'var(--neutral)';
+  if (status === 'POSTED') {
+    bg = 'var(--ok-soft)';
+    color = 'var(--ok)';
+  } else if (status === 'BALANCED' || status === 'VALIDATED') {
+    bg = 'var(--accent-soft)';
+    color = 'var(--accent)';
+  } else if (status === 'PARTIALLY_POSTED') {
+    bg = 'var(--warn-soft)';
+    color = 'var(--warn)';
+  } else if (status === 'OUT_OF_BALANCE') {
+    bg = 'var(--danger-soft)';
+    color = 'var(--danger)';
+  }
+  return (
+    <span className="badge" style={{ backgroundColor: bg, color }}>
+      {status.replace(/_/g, ' ')}
+    </span>
+  );
+}
+
+export function PostingStatusBadge({ status }: { status: string }) {
+  let bg = 'var(--neutral-soft)';
+  let color = 'var(--neutral)';
+  if (status === 'POSTED') {
+    bg = 'var(--ok-soft)';
+    color = 'var(--ok)';
+  } else if (status === 'REVERSED') {
+    bg = 'var(--danger-soft)';
+    color = 'var(--danger)';
+  } else if (status === 'UNPOSTED') {
+    bg = 'var(--info-soft)';
+    color = 'var(--info)';
+  }
+  return (
+    <span className="badge" style={{ backgroundColor: bg, color }}>
+      {status}
+    </span>
+  );
+}
+
+export function ExceptionStatusBadge({ status }: { status: string }) {
+  let bg = 'var(--danger-soft)';
+  let color = 'var(--danger)';
+  if (status === 'RESOLVED') {
+    bg = 'var(--ok-soft)';
+    color = 'var(--ok)';
+  } else if (status === 'IGNORED') {
+    bg = 'var(--neutral-soft)';
+    color = 'var(--neutral)';
+  }
+  return (
+    <span className="badge" style={{ backgroundColor: bg, color }}>
+      {status}
+    </span>
+  );
+}
+
 export function Money({ value, muted }: { value: number | null | undefined; muted?: boolean }) {
   const n = value ?? 0;
   return (

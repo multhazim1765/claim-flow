@@ -31,6 +31,9 @@ export function Layout() {
           <div className="nav-label">Revenue Cycle</div>
           <NavLink to="/eligibility">Eligibility</NavLink>
           <NavLink to="/denials">Denials & Appeals</NavLink>
+          <NavLink to="/remittances">Remittances</NavLink>
+          <NavLink to="/remittances/exceptions">Remittance Exceptions</NavLink>
+          <NavLink to="/analytics">Analytics & AR</NavLink>
 
           <div className="nav-label">Reference data</div>
           <NavLink to="/patients">Patients</NavLink>

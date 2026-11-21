@@ -12,11 +12,17 @@ import java.util.List;
 public interface RemittanceClaimExceptionRepository extends JpaRepository<RemittanceClaimException, Long>,
                                                             JpaSpecificationExecutor<RemittanceClaimException> {
 
-    @EntityGraph(attributePaths = {"remittance"})
+    @EntityGraph(attributePaths = {"remittance", "matchedClaim"})
     List<RemittanceClaimException> findByRemittanceIdOrderByIdAsc(Long remittanceId);
 
+    @EntityGraph(attributePaths = {"remittance", "matchedClaim"})
+    List<RemittanceClaimException> findByStatusOrderByIdAsc(String status);
+
+    @EntityGraph(attributePaths = {"remittance", "matchedClaim"})
+    List<RemittanceClaimException> findAllByOrderByIdAsc();
+
     @Override
-    @EntityGraph(attributePaths = {"remittance"})
+    @EntityGraph(attributePaths = {"remittance", "matchedClaim"})
     Page<RemittanceClaimException> findAll(Specification<RemittanceClaimException> spec, Pageable pageable);
 }
 

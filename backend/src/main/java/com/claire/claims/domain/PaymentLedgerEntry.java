@@ -26,7 +26,7 @@ public class PaymentLedgerEntry {
     private RemittanceBatch remittance;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "entry_type", nullable = false, length = 30)
+    @Column(name = "entry_type", nullable = false, length = 50)
     private PaymentLedgerEntryType entryType;
 
     @Column(nullable = false, precision = 12, scale = 2)

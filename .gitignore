@@ -14,3 +14,7 @@ dist/
 .vscode/
 *.iml
 .DS_Store
+
+# Scratch
+scratch/
+

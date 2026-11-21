@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
-import type { ClaimListItem, ClaimSummary, PageResponse } from '../api/types';
+import type { AccountsReceivableSummary, ClaimListItem, ClaimSummary, PageResponse } from '../api/types';
 import { PageHeader } from '../components/Layout';
 import { Card, DateText, ErrorAlert, Loading, Money, StatusBadge } from '../components/Common';
 
 export default function DashboardPage() {
   const [summary, setSummary] = useState<ClaimSummary | null>(null);
+  const [arSummary, setArSummary] = useState<AccountsReceivableSummary | null>(null);
   const [recent, setRecent] = useState<ClaimListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -15,13 +16,15 @@ export default function DashboardPage() {
     let alive = true;
     (async () => {
       try {
-        const [s, r] = await Promise.all([
+        const [s, r, ar] = await Promise.all([
           api<ClaimSummary>('/claims/summary'),
           api<PageResponse<ClaimListItem>>('/claims', { query: { size: 8, sort: 'createdAt,desc' } }),
+          api<AccountsReceivableSummary>('/financial/ar-summary').catch(() => null),
         ]);
         if (!alive) return;
         setSummary(s);
         setRecent(r.content);
+        setArSummary(ar);
       } catch (err) {
         if (alive) setError(err instanceof ApiError ? err.detail : 'Could not load the dashboard.');
       } finally {
@@ -61,11 +64,65 @@ export default function DashboardPage() {
                 <div className="stat-note">{collectionRate.toFixed(1)}% of charges</div>
               </div>
               <div className="card stat">
-                <div className="stat-label">Outstanding AR</div>
+                <div className="stat-label">Legacy Gross Outstanding</div>
                 <div className="stat-value"><Money value={summary.outstandingReceivable} /></div>
-                <div className="stat-note">excludes paid and voided</div>
+                <div className="stat-note">legacy unsegregated formula</div>
               </div>
             </div>
+
+            {/* High-Integrity Segmented AR Position (Milestone 2.3B2 / 2.3C) */}
+            {arSummary && (
+              <div className="mt-16">
+                <Card
+                  title="Segmented Accounts Receivable Reconciliation"
+                  actions={
+                    <span
+                      className="pill"
+                      style={{
+                        backgroundColor: arSummary.isBalanced ? 'var(--ok-soft)' : 'var(--danger-soft)',
+                        color: arSummary.isBalanced ? 'var(--ok)' : 'var(--danger)',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {arSummary.isBalanced ? '✓ Reconciled ($0.00 Discrepancy)' : 'Variance Discrepancy'}
+                    </span>
+                  }
+                >
+                  <div className="grid grid-4">
+                    <div className="card stat" style={{ background: 'var(--surface-2)' }}>
+                      <div className="stat-label">Confirmed Collectible AR</div>
+                      <div className="stat-value font-semibold" style={{ color: 'var(--ok)' }}>
+                        <Money value={arSummary.totalCollectibleAr} />
+                      </div>
+                      <div className="stat-note">Adjudicated payer + patient obligations</div>
+                    </div>
+                    <div className="card stat" style={{ background: 'var(--surface-2)' }}>
+                      <div className="stat-label">Adjudicated Payer AR</div>
+                      <div className="stat-value font-semibold" style={{ color: 'var(--accent)' }}>
+                        <Money value={arSummary.adjudicatedPayerAr} />
+                      </div>
+                      <div className="stat-note">Patient AR: <Money value={arSummary.patientAr} /></div>
+                    </div>
+                    <div className="card stat" style={{ background: 'var(--surface-2)' }}>
+                      <div className="stat-label">Disputed Denial Exposure</div>
+                      <div className="stat-value font-semibold" style={{ color: 'var(--warn)' }}>
+                        <Money value={arSummary.disputedAr} />
+                      </div>
+                      <div className="stat-note">Under active appeal / denial tracking</div>
+                    </div>
+                    <div className="card stat" style={{ background: 'var(--surface-2)' }}>
+                      <div className="stat-label">Verified Write-Offs (CO)</div>
+                      <div className="stat-value font-semibold">
+                        <Money value={arSummary.verifiedContractualWriteOffs} />
+                      </div>
+                      <div className="stat-note">
+                        Unadjudicated: <Money value={arSummary.unadjudicatedSubmittedExposure} /> &middot; Void/Rescinded: <Money value={arSummary.voidClaimExposure} />
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+            )}
 
             <div className="grid grid-2 mt-16">
               <Card title="Pipeline by status" tight>

@@ -56,26 +56,5 @@ public class Phase2Controller {
         throw new NotImplementedYetException("Claim document attachments", "2.5");
     }
 
-    // ----- 2.6 Analytics --------------------------------------------------
-
-    /**
-     * AR aging buckets: 0-30, 31-60, 61-90, 90+ days from submission.
-     * Spec: docs/PHASE2_HANDOFF.md section 2.6
-     */
-    @GetMapping("/api/analytics/ar-aging")
-    public Map<String, Object> arAging() {
-        throw new NotImplementedYetException("AR aging report", "2.6");
-    }
-
-    /** Denial rate and top denial reasons by payer. Spec: section 2.6 */
-    @GetMapping("/api/analytics/denial-rate")
-    public Map<String, Object> denialRate(@RequestParam(required = false) Long payerId) {
-        throw new NotImplementedYetException("Denial rate analytics", "2.6");
-    }
-
-    /** Days-in-AR and clean-claim rate per payer. Spec: section 2.6 */
-    @GetMapping("/api/analytics/payer-performance")
-    public Map<String, Object> payerPerformance() {
-        throw new NotImplementedYetException("Payer performance analytics", "2.6");
-    }
+    // ----- 2.6 Analytics implemented in RevenueCycleAnalyticsController -----
 }

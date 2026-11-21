@@ -51,6 +51,16 @@ public class RemittanceClaimException {
     @Column(name = "resolved_by", length = 60)
     private String resolvedBy;
 
+    @Column(name = "resolution_action", length = 50)
+    private String resolutionAction;
+
+    @Column(name = "resolution_notes", length = 500)
+    private String resolutionNotes;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "matched_claim_id")
+    private Claim matchedClaim;
+
     // ----- Getters and Setters -----
 
     public Long getId() { return id; }
@@ -91,5 +101,14 @@ public class RemittanceClaimException {
 
     public String getResolvedBy() { return resolvedBy; }
     public void setResolvedBy(String resolvedBy) { this.resolvedBy = resolvedBy; }
+
+    public String getResolutionAction() { return resolutionAction; }
+    public void setResolutionAction(String resolutionAction) { this.resolutionAction = resolutionAction; }
+
+    public String getResolutionNotes() { return resolutionNotes; }
+    public void setResolutionNotes(String resolutionNotes) { this.resolutionNotes = resolutionNotes; }
+
+    public Claim getMatchedClaim() { return matchedClaim; }
+    public void setMatchedClaim(Claim matchedClaim) { this.matchedClaim = matchedClaim; }
 }
 

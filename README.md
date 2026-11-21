@@ -1,8 +1,11 @@
-# Claim Management System
+# Claim Management System — Healthcare Revenue Cycle Intelligence
 
-Healthcare professional claim management: capture, workflow, audit trail and receivables.
+> [!IMPORTANT]
+> **Educational & Portfolio Demonstration Notice**: ClaimFlow is an educational, synthetic healthcare revenue cycle management (RCM) application built to demonstrate enterprise full-stack architecture, double-entry ledger financial reconciliation, automated EDI 835 remittance ingestion, and revenue cycle intelligence. It is **not** certified HIPAA-compliant production software, nor an official clearinghouse or certified ANSI ASC X12 engine. All patient names, medical record numbers (MRNs), policy identifiers, and claim transactions are completely synthetic.
 
-**Java 21 · Spring Boot 4.1.1 · PostgreSQL 17 · React 19 + TypeScript · Docker Compose**
+Healthcare professional claim management: capture, workflow, audit trail, double-entry financial reconciliation, and revenue cycle intelligence.
+
+**Java 21 · Spring Boot 4.1.1 · PostgreSQL 17 · React 19 + TypeScript · Docker Compose · Flyway V1–V7**
 
 | Document | What's in it |
 |---|---|
@@ -106,11 +109,91 @@ For the Vite dev server, set `CORS_ALLOWED_ORIGINS=http://localhost:5173` for th
 - **API docs** — OpenAPI 3 and Swagger UI, Phase 2 stubs included and marked
 - **Docker** — one command, health-gated startup ordering, multi-stage images, non-root runtime
 
-## What Phase 1 deliberately does not cover
+## Phase 2 Completed Capabilities
 
-EDI 837P export · ERA 835 remittance ingest · real-time eligibility (270/271) · denial management and appeals · document attachments · AR aging and denial analytics.
+### Milestone 2.1 — Real-Time Eligibility Verification (270/271)
+- Deterministic 270 inquiry and 271 response simulation engine with policy caching.
+- Benefit breakdown: in-network copays, deductibles, remaining amounts, and coinsurance.
+- Direct verification integration on claims workflow.
 
-Each has a live route, an authorisation rule and a written specification. Each returns `501`. See [`docs/PHASE2_HANDOFF.md`](docs/PHASE2_HANDOFF.md).
+### Milestone 2.2 — Denial Management and Multi-Level Appeals
+- CARC/RARC denial root cause categorization and assignment.
+- Multi-level appeal lifecycles (Level 1: Redetermination, Level 2: Reconsideration, Level 3: ALJ).
+- Escalation workflows, overturn/upheld decisions, deadline tracking, and audit logging.
+
+### Milestone 2.3A — Synthetic ERA 835 Remittance Ingestion
+- EDI 835 parsing into remittance batches, claim vouchers, and CAS adjustment segments.
+- Automatic batch-level and voucher-level debit/credit balance validation.
+- Out-of-balance detection and exception capture.
+
+### Milestone 2.3B1 — Safe Payer Payment Posting & Double-Entry Ledger
+- Double-entry immutable `payment_ledger` tracking posted payments and contractual adjustments.
+- Atomic posting workflows with state transitions (`PARTIALLY_PAID`, `PAID`).
+- Flyway V6 database migration and strict negative/positive balance guards.
+
+### Milestone 2.3B2 — Payment Reversals, AR Reconciliation & Claim Reopening
+- Append-only `PAYER_REVERSAL` and `CONTRACTUAL_REVERSAL` engine preserving original audit history.
+- Claim reopening transition: `PAID → PARTIALLY_PAID` or `SUBMITTED`.
+- Segmented AR Engine reconciling Gross Charges = Net Payments + Write-Offs + Total Outstanding Exposure with zero discrepancies.
+- Remittance exception resolution workflows (`RESOLVED`, `IGNORED`).
+- Flyway V7 database migration with strict unique reversal constraints.
+
+### Milestone 2.3C — Remittance Advice & Reconciliation Frontend
+- Remittances dashboard (`/remittances`), synthetic ERA 835 import modal.
+- Voucher detail view (`/remittances/:id`) with collapsible CAS adjustments and individual/batch posting.
+- Exceptions worklist (`/remittances/exceptions`) with in-app resolution modal.
+- Financial Reconciliation & AR Position panel and immutable Payment Ledger table on Claim Detail (`/claims/:id`).
+
+### Milestone 2.4 — Revenue Cycle Intelligence & Analytics
+- Complete RCM Analytics suite (`/analytics` and `/api/analytics/*`):
+  - **Executive Overview**: Financial KPIs, operational counts, RCM efficiency metrics.
+  - **AR Aging**: 5 intervals (0–30, 31–60, 61–90, 91–120, 120+ days) excluding VOID and DRAFT claims.
+  - **Payer Performance**: Side-by-side billed, payments, write-offs, aging, and denial rate comparison.
+  - **Payment Trends**: Monthly historical posting, reversals, and net adjustments.
+  - **Denial & Appeal Intelligence**: CARC root-cause distribution and appeal escalation outcomes.
+  - **Smart Priority Worklist**: Actionable, explainable prioritized claims with direct navigation.
+  - **RFC 4180 CSV Export**: Defense against CSV spreadsheet formula injection (`=`, `+`, `-`, `@`).
+
+---
+
+## Financial Accounting & Double-Entry Ledger Principles
+
+The ClaimFlow financial reconciliation engine adheres to mathematical invariants across every claim and system-wide portfolio rollup:
+
+### 1. Invariant Portfolio Equation
+$$\text{Gross Billed Charges} = \text{Net Recorded Payments} + \text{Contractual Write-Offs} + \text{Total Outstanding Exposure}$$
+*Discrepancy must equal \$0.00 across all active and historical claims.*
+
+### 2. Segmented Accounts Receivable
+- **Total Collectible AR** $= \text{Adjudicated Payer AR} + \text{Patient Responsibility AR}$
+- **Adjudicated Payer AR**: Balances on `PARTIALLY_PAID` claims awaiting secondary/supplemental payer settlement.
+- **Patient Responsibility AR**: Adjudicated patient responsibility (`PR-1`, `PR-2`, `PR-3`) remaining uncollected.
+- **Disputed Exposure**: Outstanding balances on active `DENIED` claims undergoing appeal or clinical grievance.
+- **Unadjudicated Submitted Exposure**: Billed charges on `SUBMITTED` or `ACCEPTED` claims awaiting 835 adjudication.
+- **Void Rescinded Exposure**: Rescinded charges on `VOID` claims (excluded from collectible AR).
+
+### 3. Double-Entry Append-Only Audit Ledger
+All payments and contractual adjustments are logged to an append-only `payment_ledger` table with strict foreign key constraints:
+- `PAYER_PAYMENT`: Credit to cash receipts, debit to receivable.
+- `CONTRACTUAL_WRITE_OFF`: Contractual adjustment (`CO-45`) adjusting billed charges to payer allowed fee schedule.
+- `PAYER_REVERSAL`: Append-only negative reversal offset with mandatory reason and original transaction reference.
+- `CONTRACTUAL_REVERSAL`: Reversal of write-off associated with retracted payment.
+
+---
+
+## Visual Verification & Acceptance Screenshots
+
+| View | Path / Route | Description |
+|---|---|---|
+| **Login Screen** | `/login` | Modern authentication interface with quick-fill demo credentials (`admin`, `biller`, `viewer`). |
+| **Executive Dashboard** | `/` | Portfolio overview with KPI cards, aging distribution bar, and recent activity. |
+| **Claims Worklist** | `/claims` | Server-side paginated claims table with real-time multi-dimensional filters. |
+| **Claim Detail & Ledger** | `/claims/:id` | Full claim view, line-item CPT breakdown, financial reconciliation panel, and append-only payment ledger. |
+| **Remittance Advice** | `/remittances` | Ingested ERA 835 batches, batch balance status, and raw payload audit preview. |
+| **Remittance Exceptions** | `/remittances/exceptions` | Out-of-balance, unmapped codes, and duplicate claim exception management worklist. |
+| **Revenue Cycle Analytics** | `/analytics` | Multi-tab analytics dashboard with AR aging, payer performance, denial CARC breakdown, and smart priority worklist. |
+| **Denials & Appeals** | `/denials` | Active denials tracking, CARC categorization, and multi-level appeal escalation management. |
+| **Eligibility Verification** | `/claims/new` | Integrated 270/271 real-time benefit verification engine with deductible and copay breakdown. |
 
 ---
 

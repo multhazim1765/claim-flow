@@ -243,4 +243,45 @@ public class ClaimStatusMachine {
 
         return transitions;
     }
+
+    /**
+     * Drives claim reopening transitions originating from payment reversal.
+     * Enforces valid status progressions:
+     * - PAID -> if remainingPaid == 0: reopens to ACCEPTED; if remainingPaid > 0: reopens to PARTIALLY_PAID.
+     * - PARTIALLY_PAID -> if remainingPaid == 0: reopens to ACCEPTED; if remainingPaid > 0: stays PARTIALLY_PAID (no redundant audit row).
+     * - Rejects DRAFT, VOID, REJECTED, SUBMITTED.
+     * - Preserves claim.submittedAt.
+     */
+    public List<ClaimStatusHistory> applyPaymentReversal(Claim claim, BigDecimal remainingPaid, String checkNumber, String actor) {
+        ClaimStatus from = claim.getStatus();
+        if (from == ClaimStatus.DRAFT || from == ClaimStatus.VOID || from == ClaimStatus.REJECTED || from == ClaimStatus.SUBMITTED) {
+            throw new BusinessRuleException("Cannot reverse payment on claim " + claim.getClaimNumber() + " with status " + from);
+        }
+        if (remainingPaid.signum() < 0) {
+            throw new BusinessRuleException("Payment reversal would cause negative paid amount on claim " + claim.getClaimNumber());
+        }
+
+        List<ClaimStatusHistory> transitions = new ArrayList<>();
+        String formattedRemaining = remainingPaid.setScale(2, RoundingMode.HALF_UP).toPlainString();
+        String reason = String.format("Payment reversal applied (check %s): remaining paid $%s",
+                checkNumber != null ? checkNumber : "N/A", formattedRemaining);
+
+        if (from == ClaimStatus.PAID) {
+            if (remainingPaid.signum() == 0) {
+                claim.setStatus(ClaimStatus.ACCEPTED);
+                transitions.add(new ClaimStatusHistory(claim, ClaimStatus.PAID, ClaimStatus.ACCEPTED, reason, actor));
+            } else {
+                claim.setStatus(ClaimStatus.PARTIALLY_PAID);
+                transitions.add(new ClaimStatusHistory(claim, ClaimStatus.PAID, ClaimStatus.PARTIALLY_PAID, reason, actor));
+            }
+        } else if (from == ClaimStatus.PARTIALLY_PAID) {
+            if (remainingPaid.signum() == 0) {
+                claim.setStatus(ClaimStatus.ACCEPTED);
+                transitions.add(new ClaimStatusHistory(claim, ClaimStatus.PARTIALLY_PAID, ClaimStatus.ACCEPTED, reason, actor));
+            }
+            // If remainingPaid > 0, status remains PARTIALLY_PAID, no duplicate/no-op transition history
+        }
+
+        return transitions;
+    }
 }

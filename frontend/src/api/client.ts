@@ -65,13 +65,14 @@ function buildQuery(query: Options['query']): string {
 export async function api<T>(path: string, options: Options = {}): Promise<T> {
   const token = tokenStore.get();
   const headers: Record<string, string> = { Accept: 'application/json' };
-  if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  if (options.body !== undefined && !isFormData) headers['Content-Type'] = 'application/json';
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const response = await fetch(`/api${path}${buildQuery(options.query)}`, {
     method: options.method ?? 'GET',
     headers,
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    body: options.body !== undefined ? (isFormData ? (options.body as BodyInit) : JSON.stringify(options.body)) : undefined,
   });
 
   if (response.status === 401 && !path.startsWith('/auth/login')) {
@@ -101,3 +102,29 @@ export async function api<T>(path: string, options: Options = {}): Promise<T> {
 function safeParse(text: string): Record<string, unknown> | null {
   try { return JSON.parse(text) as Record<string, unknown>; } catch { return null; }
 }
+
+export async function downloadCsv(path: string, query?: Options['query'], filename = 'export.csv'): Promise<void> {
+  const token = tokenStore.get();
+  const headers: Record<string, string> = { Accept: 'text/csv' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const response = await fetch(`/api${path}${buildQuery(query)}`, {
+    method: 'GET',
+    headers,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to export CSV: ${response.statusText}`);
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+

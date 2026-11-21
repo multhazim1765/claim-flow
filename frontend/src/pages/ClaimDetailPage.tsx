@@ -5,10 +5,14 @@ import type {
   AppealOutcome,
   AppealResponse,
   Claim,
+  ClaimArBreakdown,
   ClaimStatus,
   DenialWorklistItem,
   FileAppealInput,
   PageResponse,
+  PaymentLedgerItem,
+  PaymentReversalInput,
+  PaymentReversalResponse,
   RecordOutcomeInput,
   StatusHistoryEntry,
 } from '../api/types';
@@ -17,6 +21,7 @@ import {
   Card,
   DateText,
   DateTimeText,
+  EmptyState,
   ErrorAlert,
   Loading,
   Modal,
@@ -123,15 +128,29 @@ export default function ClaimDetailPage() {
   const [outcomeBusy, setOutcomeBusy] = useState(false);
   const [outcomeError, setOutcomeError] = useState<string | null>(null);
 
+  // Financial Reconciliation and Ledger State
+  const [arBreakdown, setArBreakdown] = useState<ClaimArBreakdown | null>(null);
+  const [ledger, setLedger] = useState<PaymentLedgerItem[]>([]);
+  const [reversalTarget, setReversalTarget] = useState<PaymentLedgerItem | null>(null);
+  const [reversalReason, setReversalReason] = useState('');
+  const [reversalCheckNumber, setReversalCheckNumber] = useState('');
+  const [reversalCheckDate, setReversalCheckDate] = useState('');
+  const [reversalNotes, setReversalNotes] = useState('');
+  const [reversalBusy, setReversalBusy] = useState(false);
+  const [reversalError, setReversalError] = useState<string | null>(null);
+  const [reversalSuccess, setReversalSuccess] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     try {
-      const [c, h, a, d] = await Promise.all([
+      const [c, h, a, d, ar, led] = await Promise.all([
         api<Claim>(`/claims/${id}`),
         api<StatusHistoryEntry[]>(`/claims/${id}/history`),
         api<AppealResponse[]>(`/claims/${id}/appeals`),
         api<PageResponse<DenialWorklistItem>>('/denials', { query: { size: 100 } }).catch(() => null),
+        api<ClaimArBreakdown>(`/claims/${id}/ar-breakdown`).catch(() => null),
+        api<PaymentLedgerItem[]>(`/claims/${id}/ledger`).catch(() => []),
       ]);
       setClaim(c);
       setHistory(h);
@@ -139,6 +158,8 @@ export default function ClaimDetailPage() {
       if (d) {
         setDenials(d.content.filter((item) => item.claimId === Number(id)));
       }
+      setArBreakdown(ar);
+      setLedger(led || []);
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : 'Could not load this claim.');
@@ -264,6 +285,49 @@ export default function ClaimDetailPage() {
       navigate('/claims');
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : 'Could not delete the claim.');
+    }
+  };
+
+  const openReversal = (entry: PaymentLedgerItem) => {
+    setReversalTarget(entry);
+    setReversalReason('');
+    setReversalCheckNumber(entry.checkNumber || '');
+    setReversalCheckDate(entry.checkDate || '');
+    setReversalNotes('');
+    setReversalError(null);
+    setReversalSuccess(null);
+  };
+
+  const submitReversal = async () => {
+    if (!reversalTarget || !claim) return;
+    if (!reversalReason.trim()) {
+      setReversalError('Reversal reason is required.');
+      return;
+    }
+    setReversalBusy(true);
+    setReversalError(null);
+    try {
+      const payload: PaymentReversalInput = {
+        originalLedgerId: reversalTarget.id,
+        reversalReason: reversalReason.trim(),
+        checkNumber: reversalCheckNumber.trim() || null,
+        checkDate: reversalCheckDate || null,
+        notes: reversalNotes.trim() || null,
+      };
+      await api<PaymentReversalResponse>(`/claims/${claim.id}/reversals`, {
+        method: 'POST',
+        body: payload,
+      });
+      setReversalSuccess('Payment reversed successfully. Financial balances and claim status updated.');
+      setTimeout(async () => {
+        setReversalTarget(null);
+        setReversalSuccess(null);
+        await load();
+      }, 1200);
+    } catch (err) {
+      setReversalError(err instanceof ApiError ? err.detail : 'Failed to reverse payment.');
+    } finally {
+      setReversalBusy(false);
     }
   };
 
@@ -588,6 +652,134 @@ export default function ClaimDetailPage() {
         </div>
 
         <div className="mt-16">
+          <Card title="Financial Reconciliation & AR Position" tight>
+            {arBreakdown ? (
+              <div style={{ padding: 16 }}>
+                {arBreakdown.legacyDiscrepancyNotes && (
+                  <div className="alert alert-warn" style={{ marginBottom: 14 }}>
+                    <strong>Legacy Discrepancy:</strong> {arBreakdown.legacyDiscrepancyNotes}
+                  </div>
+                )}
+
+                <div className="grid grid-4" style={{ marginBottom: 16 }}>
+                  <div className="card stat" style={{ background: 'var(--surface-2)' }}>
+                    <div className="stat-label">Billed Charge</div>
+                    <div className="stat-value font-semibold"><Money value={arBreakdown.totalCharge} /></div>
+                    <div className="stat-note">Allowed: <Money value={arBreakdown.allowedAmount} /></div>
+                  </div>
+                  <div className="card stat" style={{ background: 'var(--surface-2)' }}>
+                    <div className="stat-label">Net Recorded Paid</div>
+                    <div className="stat-value font-semibold" style={{ color: 'var(--ok)' }}><Money value={arBreakdown.paidAmount} /></div>
+                    <div className="stat-note">Contractual Write-Off: <Money value={arBreakdown.contractualAdjustment} /></div>
+                  </div>
+                  <div className="card stat" style={{ background: 'var(--surface-2)' }}>
+                    <div className="stat-label">Active Payer AR</div>
+                    <div className="stat-value font-semibold" style={{ color: 'var(--accent)' }}><Money value={arBreakdown.adjudicatedPayerAr} /></div>
+                    <div className="stat-note">Patient AR: <Money value={arBreakdown.patientAr} /></div>
+                  </div>
+                  <div className="card stat" style={{ background: 'var(--surface-2)' }}>
+                    <div className="stat-label">Remaining Balance</div>
+                    <div className="stat-value font-semibold"><Money value={arBreakdown.remainingBalance} /></div>
+                    <div className="stat-note">Disputed Exposure: <Money value={arBreakdown.disputedExposure} /></div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Payment Ledger Audit Trail */}
+            <div style={{ borderTop: '1px solid var(--border)', padding: '12px 16px', background: 'var(--surface-2)', fontWeight: 600 }}>
+              Payment Posting & Reversal Ledger ({ledger.length} entries)
+            </div>
+
+            {ledger.length === 0 ? (
+              <div style={{ padding: 16 }}>
+                <EmptyState
+                  title="No payment ledger entries recorded"
+                  hint="Payments and write-offs posted via synthetic ERA 835 will appear in this immutable audit ledger."
+                />
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Date</th>
+                      <th>Entry Type</th>
+                      <th>Ref / Check #</th>
+                      <th className="num">Signed Amount</th>
+                      <th>Payer ICN</th>
+                      <th>Posted By</th>
+                      <th>Notes</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ledger.map((entry) => {
+                      const isReversal = entry.entryType === 'PAYER_REVERSAL' || entry.entryType === 'CONTRACTUAL_ADJUSTMENT_REVERSAL';
+                      const isCo = entry.entryType === 'CONTRACTUAL_WRITE_OFF' || entry.entryType === 'CONTRACTUAL_ADJUSTMENT_REVERSAL';
+                      const isAlreadyReversed = ledger.some(
+                        (l) => l.entryType === 'PAYER_REVERSAL' && l.originalLedgerId === entry.id
+                      );
+                      const canReverseThis = canWrite && entry.entryType === 'PAYER_PAYMENT' && !isAlreadyReversed;
+
+                      return (
+                        <tr key={entry.id} style={{ background: isReversal ? 'var(--danger-soft)' : undefined }}>
+                          <td className="mono">{entry.id}</td>
+                          <td><DateTimeText value={entry.postedAt} /></td>
+                          <td>
+                            <span
+                              className="pill font-semibold"
+                              style={{
+                                color: isReversal ? 'var(--danger)' : isCo ? 'var(--warn)' : 'var(--ok)',
+                              }}
+                            >
+                              {entry.entryType.replace(/_/g, ' ')}
+                            </span>
+                          </td>
+                          <td className="mono" style={{ fontSize: 12 }}>
+                            {entry.checkNumber || '—'}
+                            {entry.checkDate && <span className="faint" style={{ marginLeft: 4 }}>({entry.checkDate})</span>}
+                          </td>
+                          <td className="num font-semibold" style={{ color: isReversal ? 'var(--danger)' : 'inherit' }}>
+                            <Money value={entry.amount} />
+                          </td>
+                          <td className="mono" style={{ fontSize: 12 }}>{entry.payerIcn || '—'}</td>
+                          <td>{entry.postedBy}</td>
+                          <td style={{ fontSize: 12, maxWidth: 220 }} className="muted">{entry.notes || '—'}</td>
+                          <td>
+                            {canReverseThis ? (
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                style={{ fontSize: 11, padding: '3px 8px', color: 'var(--danger)' }}
+                                onClick={() => openReversal(entry)}
+                              >
+                                Reverse Payment
+                              </button>
+                            ) : isAlreadyReversed ? (
+                              <span className="badge" style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)', fontSize: 10 }}>
+                                Reversed
+                              </span>
+                            ) : entry.originalLedgerId ? (
+                              <span className="faint" style={{ fontSize: 11 }}>
+                                Reversal of #{entry.originalLedgerId}
+                              </span>
+                            ) : (
+                              <span className="faint" style={{ fontSize: 11 }}>—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </div>
+
+        <div className="mt-16">
           <Card title="Audit trail">
             <ul className="timeline">
               {history.map((h, i) => (
@@ -793,6 +985,106 @@ export default function ClaimDetailPage() {
             }}
           >
             <strong>Financial Separation:</strong> Recording an overturned appeal transitions the claim to <code>ACCEPTED</code>. Actual payment receipt and cash balance updates remain separated until remittance posting.
+          </div>
+        </Modal>
+      )}
+
+      {/* Payment Reversal Modal */}
+      {reversalTarget && (
+        <Modal
+          title={`Execute Payment Reversal — Ledger #${reversalTarget.id}`}
+          onClose={() => !reversalBusy && setReversalTarget(null)}
+          footer={
+            <>
+              <button
+                className="btn btn-secondary"
+                disabled={reversalBusy}
+                onClick={() => setReversalTarget(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-danger"
+                disabled={reversalBusy || !reversalReason.trim()}
+                onClick={submitReversal}
+              >
+                {reversalBusy ? 'Reversing Payment...' : 'Confirm Append-Only Reversal'}
+              </button>
+            </>
+          }
+        >
+          {reversalError && <div className="alert alert-error" style={{ marginBottom: 12 }}>{reversalError}</div>}
+          {reversalSuccess && <div className="alert alert-ok" style={{ marginBottom: 12 }}>{reversalSuccess}</div>}
+
+          <div
+            style={{
+              padding: '10px 14px',
+              background: 'var(--warn-soft)',
+              borderRadius: 'var(--radius-s)',
+              color: 'var(--warn)',
+              fontSize: 12,
+              marginBottom: 14,
+            }}
+          >
+            <strong>Financial Reversal Rules:</strong> Reversing this payment appends a signed negative <code>PAYER_REVERSAL</code> entry to the ledger and reverses associated contractual write-offs. Claim status will reopen if remaining balance is outstanding.
+          </div>
+
+          <div className="card" style={{ padding: 12, marginBottom: 14, background: 'var(--surface-2)' }}>
+            <div style={{ fontSize: 13, marginBottom: 4 }}>
+              <strong>Original Payment Amount:</strong> <Money value={reversalTarget.amount} />
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              <strong>Reference:</strong> Check {reversalTarget.checkNumber || '—'} &middot; ICN {reversalTarget.payerIcn || '—'}
+            </div>
+          </div>
+
+          <div className="field">
+            <label htmlFor="revReasonInput">Reversal Reason *</label>
+            <input
+              id="revReasonInput"
+              type="text"
+              placeholder="e.g. Recoupment for claim correction / Overpayment recovery"
+              value={reversalReason}
+              onChange={(e) => setReversalReason(e.target.value)}
+              disabled={reversalBusy}
+              autoFocus
+            />
+            <div className="field-hint">Required for financial compliance and ledger audit provenance.</div>
+          </div>
+
+          <div className="grid grid-2">
+            <div className="field">
+              <label htmlFor="revCheckNumber">Supporting Check / EFT #</label>
+              <input
+                id="revCheckNumber"
+                type="text"
+                value={reversalCheckNumber}
+                onChange={(e) => setReversalCheckNumber(e.target.value)}
+                disabled={reversalBusy}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="revCheckDate">Check Date</label>
+              <input
+                id="revCheckDate"
+                type="date"
+                value={reversalCheckDate}
+                onChange={(e) => setReversalCheckDate(e.target.value)}
+                disabled={reversalBusy}
+              />
+            </div>
+          </div>
+
+          <div className="field">
+            <label htmlFor="revNotesInput">Additional Notes</label>
+            <textarea
+              id="revNotesInput"
+              rows={2}
+              placeholder="Investigation notes or supporting synthetic remittance voucher details..."
+              value={reversalNotes}
+              onChange={(e) => setReversalNotes(e.target.value)}
+              disabled={reversalBusy}
+            />
           </div>
         </Modal>
       )}

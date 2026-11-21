@@ -168,5 +168,108 @@ class ClaimStatusMachineTest {
               .hasMessageContaining("Cannot post payment to claim");
         }
     }
+
+    @Test
+    @DisplayName("Payment reversal on PAID claim reopening to ACCEPTED when remaining paid is zero")
+    void testPaymentReversalFromPaidToAccepted() {
+        claim.setStatus(ClaimStatus.PAID);
+
+        List<ClaimStatusHistory> transitions = statusMachine.applyPaymentReversal(
+                claim,
+                BigDecimal.ZERO,
+                "CHK-REV-001",
+                "admin"
+        );
+
+        assertThat(transitions).hasSize(1);
+        assertThat(claim.getStatus()).isEqualTo(ClaimStatus.ACCEPTED);
+        ClaimStatusHistory t = transitions.get(0);
+        assertThat(t.getFromStatus()).isEqualTo(ClaimStatus.PAID);
+        assertThat(t.getToStatus()).isEqualTo(ClaimStatus.ACCEPTED);
+        assertThat(t.getReason()).contains("Payment reversal applied (check CHK-REV-001): remaining paid $0.00");
+        assertThat(t.getChangedBy()).isEqualTo("admin");
+    }
+
+    @Test
+    @DisplayName("Payment reversal on PAID claim reopening to PARTIALLY_PAID when remaining paid > 0")
+    void testPaymentReversalFromPaidToPartiallyPaid() {
+        claim.setStatus(ClaimStatus.PAID);
+
+        List<ClaimStatusHistory> transitions = statusMachine.applyPaymentReversal(
+                claim,
+                new BigDecimal("250.00"),
+                "CHK-REV-002",
+                "admin"
+        );
+
+        assertThat(transitions).hasSize(1);
+        assertThat(claim.getStatus()).isEqualTo(ClaimStatus.PARTIALLY_PAID);
+        ClaimStatusHistory t = transitions.get(0);
+        assertThat(t.getFromStatus()).isEqualTo(ClaimStatus.PAID);
+        assertThat(t.getToStatus()).isEqualTo(ClaimStatus.PARTIALLY_PAID);
+        assertThat(t.getReason()).contains("remaining paid $250.00");
+    }
+
+    @Test
+    @DisplayName("Payment reversal on PARTIALLY_PAID claim reopening to ACCEPTED when remaining paid is zero")
+    void testPaymentReversalFromPartiallyPaidToAccepted() {
+        claim.setStatus(ClaimStatus.PARTIALLY_PAID);
+
+        List<ClaimStatusHistory> transitions = statusMachine.applyPaymentReversal(
+                claim,
+                BigDecimal.ZERO,
+                "CHK-REV-003",
+                "biller"
+        );
+
+        assertThat(transitions).hasSize(1);
+        assertThat(claim.getStatus()).isEqualTo(ClaimStatus.ACCEPTED);
+        assertThat(transitions.get(0).getFromStatus()).isEqualTo(ClaimStatus.PARTIALLY_PAID);
+        assertThat(transitions.get(0).getToStatus()).isEqualTo(ClaimStatus.ACCEPTED);
+    }
+
+    @Test
+    @DisplayName("Payment reversal on PARTIALLY_PAID claim staying PARTIALLY_PAID produces no redundant transition row")
+    void testPaymentReversalFromPartiallyPaidToPartiallyPaidNoOp() {
+        claim.setStatus(ClaimStatus.PARTIALLY_PAID);
+
+        List<ClaimStatusHistory> transitions = statusMachine.applyPaymentReversal(
+                claim,
+                new BigDecimal("100.00"),
+                "CHK-REV-004",
+                "biller"
+        );
+
+        assertThat(transitions).isEmpty();
+        assertThat(claim.getStatus()).isEqualTo(ClaimStatus.PARTIALLY_PAID);
+    }
+
+    @Test
+    @DisplayName("Payment reversal on invalid status (DRAFT, VOID, REJECTED, SUBMITTED) throws BusinessRuleException")
+    void testPaymentReversalOnInvalidStatusThrows() {
+        for (ClaimStatus badStatus : List.of(ClaimStatus.DRAFT, ClaimStatus.VOID, ClaimStatus.REJECTED, ClaimStatus.SUBMITTED)) {
+            claim.setStatus(badStatus);
+            assertThatThrownBy(() -> statusMachine.applyPaymentReversal(
+                    claim,
+                    BigDecimal.ZERO,
+                    "CHK-REV-BAD",
+                    "biller"
+            )).isInstanceOf(BusinessRuleException.class)
+              .hasMessageContaining("Cannot reverse payment on claim");
+        }
+    }
+
+    @Test
+    @DisplayName("Payment reversal with negative remaining paid throws BusinessRuleException")
+    void testPaymentReversalWithNegativeRemainingThrows() {
+        claim.setStatus(ClaimStatus.PAID);
+        assertThatThrownBy(() -> statusMachine.applyPaymentReversal(
+                claim,
+                new BigDecimal("-50.00"),
+                "CHK-REV-NEG",
+                "biller"
+        )).isInstanceOf(BusinessRuleException.class)
+          .hasMessageContaining("negative paid amount");
+    }
 }
 
