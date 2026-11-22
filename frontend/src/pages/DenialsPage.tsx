@@ -564,6 +564,9 @@ export default function DenialsPage() {
                           <Link to={`/claims/${item.claimId}`} className="btn btn-secondary btn-sm">
                             View Claim
                           </Link>
+                          <Link to={`/claims/${item.claimId}#attachments`} className="btn btn-secondary btn-sm" title="View or attach supporting documentation">
+                            Docs
+                          </Link>
                           {canWrite && item.status === 'OPEN' && item.daysRemaining >= 0 && (
                             <button
                               type="button"

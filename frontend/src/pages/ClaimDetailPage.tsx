@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, ApiError } from '../api/client';
+import { api, downloadFile, ApiError } from '../api/client';
 import type {
   AppealOutcome,
   AppealResponse,
+  AttachmentAuditResponse,
+  AttachmentMetadataResponse,
   Claim,
   ClaimArBreakdown,
   ClaimStatus,
   DenialWorklistItem,
+  DocumentCategory,
   FileAppealInput,
   PageResponse,
   PaymentLedgerItem,
@@ -41,6 +44,26 @@ const APPEAL_OUTCOMES: { value: AppealOutcome; label: string; desc: string }[] =
   { value: 'UPHELD', label: 'Upheld (Denial Maintained)', desc: 'Payer reaffirmed the denial; appeal rejected.' },
   { value: 'WITHDRAWN', label: 'Withdrawn', desc: 'Provider / biller withdrew the appeal.' },
 ];
+
+const ATTACHMENT_CATEGORIES: { value: DocumentCategory; label: string }[] = [
+  { value: 'MEDICAL_REPORT', label: 'Medical Report / Clinical Note' },
+  { value: 'PRESCRIPTION', label: 'Prescription' },
+  { value: 'LAB_REPORT', label: 'Lab Report / Pathology' },
+  { value: 'REFERRAL', label: 'Referral Order' },
+  { value: 'PRIOR_AUTHORIZATION', label: 'Prior Authorization' },
+  { value: 'ITEMIZED_BILL', label: 'Itemized Bill' },
+  { value: 'DENIAL_LETTER', label: 'Denial Letter' },
+  { value: 'APPEAL_SUPPORT', label: 'Appeal Evidence Exhibit' },
+  { value: 'INSURANCE_DOCUMENT', label: 'Insurance / Eligibility Document' },
+  { value: 'DISCHARGE_SUMMARY', label: 'Discharge Summary' },
+  { value: 'OTHER', label: 'Other Document' },
+];
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+}
 
 function OutcomeBadge({ outcome }: { outcome: AppealOutcome | null }) {
   if (!outcome) {
@@ -140,17 +163,38 @@ export default function ClaimDetailPage() {
   const [reversalError, setReversalError] = useState<string | null>(null);
   const [reversalSuccess, setReversalSuccess] = useState<string | null>(null);
 
+  // Document Attachments State
+  const [attachments, setAttachments] = useState<AttachmentMetadataResponse[]>([]);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [archiveModalOpen, setArchiveModalOpen] = useState(false);
+  const [archiveTarget, setArchiveTarget] = useState<AttachmentMetadataResponse | null>(null);
+  const [archiveReason, setArchiveReason] = useState('');
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadCategory, setUploadCategory] = useState<DocumentCategory>('MEDICAL_REPORT');
+  const [uploadDesc, setUploadDesc] = useState('');
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [attAudits, setAttAudits] = useState<AttachmentAuditResponse[]>([]);
+  const [attAuditsLoading, setAttAuditsLoading] = useState(false);
+  const [selectedAttForHistory, setSelectedAttForHistory] = useState<AttachmentMetadataResponse | null>(null);
+
   const load = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     try {
-      const [c, h, a, d, ar, led] = await Promise.all([
+      const [c, h, a, d, ar, led, atts] = await Promise.all([
         api<Claim>(`/claims/${id}`),
         api<StatusHistoryEntry[]>(`/claims/${id}/history`),
         api<AppealResponse[]>(`/claims/${id}/appeals`),
         api<PageResponse<DenialWorklistItem>>('/denials', { query: { size: 100 } }).catch(() => null),
         api<ClaimArBreakdown>(`/claims/${id}/ar-breakdown`).catch(() => null),
         api<PaymentLedgerItem[]>(`/claims/${id}/ledger`).catch(() => []),
+        api<AttachmentMetadataResponse[]>(`/claims/${id}/attachments`).catch(() => []),
       ]);
       setClaim(c);
       setHistory(h);
@@ -160,6 +204,7 @@ export default function ClaimDetailPage() {
       }
       setArBreakdown(ar);
       setLedger(led || []);
+      setAttachments(atts || []);
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : 'Could not load this claim.');
@@ -328,6 +373,91 @@ export default function ClaimDetailPage() {
       setReversalError(err instanceof ApiError ? err.detail : 'Failed to reverse payment.');
     } finally {
       setReversalBusy(false);
+    }
+  };
+
+  const submitUploadAttachment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!claim || !uploadFile) return;
+
+    setUploadBusy(true);
+    setUploadError(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', uploadFile);
+      formData.append('documentCategory', uploadCategory);
+      if (uploadDesc.trim()) {
+        formData.append('description', uploadDesc.trim());
+      }
+
+      await api(`/claims/${claim.id}/attachments`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      setUploadModalOpen(false);
+      setUploadFile(null);
+      setUploadDesc('');
+      await load();
+    } catch (err) {
+      setUploadError(err instanceof ApiError ? err.detail : 'Failed to upload document.');
+    } finally {
+      setUploadBusy(false);
+    }
+  };
+
+  const openArchiveModal = (att: AttachmentMetadataResponse) => {
+    setArchiveTarget(att);
+    setArchiveReason('');
+    setArchiveError(null);
+    setArchiveModalOpen(true);
+  };
+
+  const submitArchiveAttachment = async () => {
+    if (!claim || !archiveTarget) return;
+    if (!archiveReason.trim()) {
+      setArchiveError('Archive reason is required.');
+      return;
+    }
+
+    setArchiveBusy(true);
+    setArchiveError(null);
+    try {
+      await api(`/claims/${claim.id}/attachments/${archiveTarget.id}/archive`, {
+        method: 'POST',
+        body: { archiveReason: archiveReason.trim() },
+      });
+      setArchiveModalOpen(false);
+      setArchiveTarget(null);
+      await load();
+    } catch (err) {
+      setArchiveError(err instanceof ApiError ? err.detail : 'Failed to archive attachment.');
+    } finally {
+      setArchiveBusy(false);
+    }
+  };
+
+  const openHistoryModal = async (att: AttachmentMetadataResponse) => {
+    if (!claim) return;
+    setSelectedAttForHistory(att);
+    setAttAuditsLoading(true);
+    setHistoryModalOpen(true);
+    try {
+      const data = await api<AttachmentAuditResponse[]>(`/claims/${claim.id}/attachments/${att.id}/history`);
+      setAttAudits(data || []);
+    } catch (err) {
+      console.error('Failed to load attachment history', err);
+    } finally {
+      setAttAuditsLoading(false);
+    }
+  };
+
+  const downloadAttachmentFile = async (att: AttachmentMetadataResponse) => {
+    if (!claim) return;
+    try {
+      await downloadFile(`/claims/${claim.id}/attachments/${att.id}/download`, undefined, att.originalFileName);
+    } catch (err: any) {
+      alert('Download failed: ' + err.message);
     }
   };
 
@@ -780,6 +910,139 @@ export default function ClaimDetailPage() {
         </div>
 
         <div className="mt-16">
+          <Card
+            title={`Documents & Supporting Attachments (${attachments.filter((a) => a.attachmentStatus === 'ACTIVE').length})`}
+            tight
+            actions={
+              canWrite && (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => {
+                    setUploadFile(null);
+                    setUploadCategory('MEDICAL_REPORT');
+                    setUploadDesc('');
+                    setUploadError(null);
+                    setUploadModalOpen(true);
+                  }}
+                >
+                  + Upload Document
+                </button>
+              )
+            }
+          >
+            {attachments.length === 0 ? (
+              <div className="muted" style={{ padding: '24px 20px', textAlign: 'center', fontSize: 13 }}>
+                No documents or clinical exhibits attached to this claim yet.
+                {canWrite && (
+                  <div style={{ marginTop: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => {
+                        setUploadFile(null);
+                        setUploadCategory('MEDICAL_REPORT');
+                        setUploadDesc('');
+                        setUploadError(null);
+                        setUploadModalOpen(true);
+                      }}
+                    >
+                      Attach Medical Report, Prior Auth, or Denial Letter
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Document</th>
+                      <th>Category</th>
+                      <th>Type & Size</th>
+                      <th>Uploaded Date</th>
+                      <th>Uploaded By</th>
+                      <th>Status</th>
+                      <th>Scan Status</th>
+                      <th style={{ textAlign: 'right' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {attachments.map((att) => (
+                      <tr key={att.id} style={{ opacity: att.attachmentStatus === 'ARCHIVED' ? 0.6 : 1 }}>
+                        <td>
+                          <div style={{ fontWeight: 600 }}>{att.originalFileName}</div>
+                          {att.description && (
+                            <div className="muted" style={{ fontSize: 11, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {att.description}
+                            </div>
+                          )}
+                          {att.archiveReason && (
+                            <div style={{ fontSize: 11, color: 'var(--danger)' }}>
+                              Archived: {att.archiveReason} ({att.archivedBy})
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          <span className="pill pill-phase2" style={{ fontSize: 11 }}>
+                            {att.documentCategory.replace(/_/g, ' ')}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: 12 }}>
+                          <code>{att.contentType}</code> &middot; {formatBytes(att.fileSize)}
+                        </td>
+                        <td style={{ fontSize: 12 }}>
+                          {new Date(att.uploadedAt).toLocaleDateString()}
+                        </td>
+                        <td style={{ fontSize: 12 }}>{att.uploadedBy}</td>
+                        <td>
+                          <span className={`badge ${att.attachmentStatus === 'ACTIVE' ? 'badge-paid' : 'badge-denied'}`} style={{ fontSize: 10 }}>
+                            {att.attachmentStatus}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="badge badge-ready" style={{ fontSize: 10 }}>
+                            {att.securityScanStatus}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ marginRight: 4, fontSize: 11, padding: '2px 6px' }}
+                            onClick={() => openHistoryModal(att)}
+                          >
+                            History
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ marginRight: 4, fontSize: 11, padding: '2px 6px' }}
+                            onClick={() => downloadAttachmentFile(att)}
+                          >
+                            Download
+                          </button>
+                          {canWrite && att.attachmentStatus === 'ACTIVE' && (
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              style={{ fontSize: 11, padding: '2px 6px' }}
+                              onClick={() => openArchiveModal(att)}
+                            >
+                              Archive
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </div>
+
+        <div className="mt-16">
           <Card title="Audit trail">
             <ul className="timeline">
               {history.map((h, i) => (
@@ -1086,6 +1349,188 @@ export default function ClaimDetailPage() {
               disabled={reversalBusy}
             />
           </div>
+        </Modal>
+      )}
+
+      {/* Upload Document Modal */}
+      {uploadModalOpen && (
+        <Modal
+          title={`Attach Document — Claim ${claim.claimNumber}`}
+          onClose={() => !uploadBusy && setUploadModalOpen(false)}
+          footer={
+            <>
+              <button
+                className="btn btn-secondary"
+                disabled={uploadBusy}
+                onClick={() => setUploadModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn"
+                disabled={uploadBusy || !uploadFile}
+                onClick={submitUploadAttachment}
+              >
+                {uploadBusy ? 'Uploading & Verifying...' : 'Upload Document'}
+              </button>
+            </>
+          }
+        >
+          {uploadError && <div className="alert alert-error" style={{ marginBottom: 12 }}>{uploadError}</div>}
+
+          <div
+            style={{
+              padding: '10px 14px',
+              background: 'var(--surface-2)',
+              borderRadius: 'var(--radius-s)',
+              fontSize: 12,
+              marginBottom: 14,
+            }}
+          >
+            <strong>Attachment Security:</strong> Files are strictly verified against extension allowlists and magic byte signatures (PDF, JPEG, PNG). Stored securely outside web root with SHA-256 integrity hashing (Max 10MB).
+          </div>
+
+          <div className="field">
+            <label htmlFor="uploadDocCategory">Document Category *</label>
+            <select
+              id="uploadDocCategory"
+              value={uploadCategory}
+              onChange={(e) => setUploadCategory(e.target.value as DocumentCategory)}
+              disabled={uploadBusy}
+            >
+              {ATTACHMENT_CATEGORIES.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="field">
+            <label htmlFor="uploadFileField">Select File (PDF, JPEG, PNG - Max 10MB) *</label>
+            <input
+              id="uploadFileField"
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  setUploadFile(e.target.files[0]);
+                }
+              }}
+              disabled={uploadBusy}
+            />
+            {uploadFile && (
+              <div className="field-hint" style={{ color: 'var(--brand)', fontWeight: 500 }}>
+                Selected: {uploadFile.name} ({formatBytes(uploadFile.size)})
+              </div>
+            )}
+          </div>
+
+          <div className="field">
+            <label htmlFor="uploadDescField">Description / Clinical Purpose (Optional)</label>
+            <textarea
+              id="uploadDescField"
+              rows={2}
+              placeholder="e.g. Operative report supporting modifier 22, denial explanation exhibit..."
+              value={uploadDesc}
+              onChange={(e) => setUploadDesc(e.target.value)}
+              disabled={uploadBusy}
+            />
+          </div>
+        </Modal>
+      )}
+
+      {/* Archive Document Modal */}
+      {archiveModalOpen && archiveTarget && (
+        <Modal
+          title={`Archive Document — ${archiveTarget.originalFileName}`}
+          onClose={() => !archiveBusy && setArchiveModalOpen(false)}
+          footer={
+            <>
+              <button
+                className="btn btn-secondary"
+                disabled={archiveBusy}
+                onClick={() => setArchiveModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-danger"
+                disabled={archiveBusy || !archiveReason.trim()}
+                onClick={submitArchiveAttachment}
+              >
+                {archiveBusy ? 'Archiving...' : 'Confirm Archival'}
+              </button>
+            </>
+          }
+        >
+          {archiveError && <div className="alert alert-error" style={{ marginBottom: 12 }}>{archiveError}</div>}
+
+          <div
+            style={{
+              padding: '10px 14px',
+              background: 'var(--warn-soft)',
+              borderRadius: 'var(--radius-s)',
+              color: 'var(--warn)',
+              fontSize: 12,
+              marginBottom: 14,
+            }}
+          >
+            <strong>Logical Archival Notice:</strong> Archiving marks this document inactive and records a permanent audit entry with your user identity and reason. File bytes are preserved on disk for regulatory audit compliance.
+          </div>
+
+          <div className="field">
+            <label htmlFor="archiveReasonField">Archive Reason *</label>
+            <input
+              id="archiveReasonField"
+              type="text"
+              placeholder="e.g. Superseded by corrected document / Attached to wrong claim"
+              value={archiveReason}
+              onChange={(e) => setArchiveReason(e.target.value)}
+              disabled={archiveBusy}
+              autoFocus
+            />
+            <div className="field-hint">Required for HIPAA / HITRUST audit trails.</div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Attachment Audit History Modal */}
+      {historyModalOpen && selectedAttForHistory && (
+        <Modal
+          title={`Document Audit History — ${selectedAttForHistory.originalFileName}`}
+          onClose={() => setHistoryModalOpen(false)}
+          footer={
+            <button className="btn btn-secondary" onClick={() => setHistoryModalOpen(false)}>
+              Close
+            </button>
+          }
+        >
+          <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--text-muted)' }}>
+            Document ID: #{selectedAttForHistory.id} &middot; Category: {selectedAttForHistory.documentCategory.replace('_', ' ')} &middot; SHA-256: <code style={{ fontSize: 10 }}>{selectedAttForHistory.sha256Hash?.slice(0, 16)}...</code>
+          </div>
+
+          {attAuditsLoading ? (
+            <Loading label="Loading audit trail" />
+          ) : attAudits.length === 0 ? (
+            <EmptyState title="No audit entries" hint="No audit events recorded for this attachment." />
+          ) : (
+            <ul className="timeline">
+              {attAudits.map((a, i) => (
+                <li key={a.id} className={i === attAudits.length - 1 ? 'current' : undefined}>
+                  <div className="timeline-when">
+                    <DateTimeText value={a.actedAt} /> &middot; {a.actor}
+                  </div>
+                  <div className="timeline-what">
+                    <span className="badge" style={{ marginRight: 6, fontWeight: 600 }}>
+                      {a.action}
+                    </span>
+                  </div>
+                  {a.notes && <div className="timeline-why">{a.notes}</div>}
+                </li>
+              ))}
+            </ul>
+          )}
         </Modal>
       )}
     </>

@@ -115,20 +115,31 @@ class AccountsReceivableServiceTest {
         assertThat(summary.netRecordedPayerPayments()).isEqualByComparingTo("450.00"); // 70 + 380 = 450
         assertThat(summary.verifiedContractualWriteOffs()).isEqualByComparingTo("70.00"); // 20 + 50 = 70
 
-        // Exposure & AR
-        assertThat(summary.patientAr()).isEqualByComparingTo("130.00"); // 100 + 30 = 130
+        // Exposure & AR - mutually exclusive and complete categories
+        assertThat(summary.patientAr()).isEqualByComparingTo("100.00"); // c2 patient obligation on active claim
         assertThat(summary.adjudicatedPayerAr()).isEqualByComparingTo("50.00"); // c2 payer obligation
-        assertThat(summary.totalCollectibleAr()).isEqualByComparingTo("180.00"); // 130 + 50 = 180
+        assertThat(summary.totalCollectibleAr()).isEqualByComparingTo("150.00"); // 100 + 50 = 150
         assertThat(summary.disputedAr()).isEqualByComparingTo("400.00"); // c4 DENIED
         assertThat(summary.unadjudicatedSubmittedExposure()).isEqualByComparingTo("600.00"); // c3 SUBMITTED
         assertThat(summary.rejectedClaimExposure()).isEqualByComparingTo("200.00"); // c5 REJECTED
         assertThat(summary.draftClaimExposure()).isEqualByComparingTo("150.00"); // c6 DRAFT
 
-        // Legacy inconsistency: c7 has 30.00 patient resp on PAID claim, plus discount variance (120 - 100 = 20)
-        assertThat(summary.legacyUnclassifiedBalances()).isEqualByComparingTo("50.00"); // 30 + 20 = 50.00
+        // Legacy inconsistency: c7 has remaining balance on PAID claim (30 patient resp + 20 discount variance = 50)
+        assertThat(summary.legacyUnclassifiedBalances()).isEqualByComparingTo("50.00");
 
         // Total Outstanding = 2070 - 450 (net payments) - 70 (write-offs) = 1550.00
         assertThat(summary.totalOutstandingExposure()).isEqualByComparingTo("1550.00");
+
+        // Mathematical completeness: category sum matches totalOutstandingExposure with $0.00 difference
+        BigDecimal categorySum = summary.totalCollectibleAr()
+                .add(summary.disputedAr())
+                .add(summary.unadjudicatedSubmittedExposure())
+                .add(summary.rejectedClaimExposure())
+                .add(summary.draftClaimExposure())
+                .add(summary.voidClaimExposure())
+                .add(summary.legacyUnclassifiedBalances());
+        assertThat(categorySum).isEqualByComparingTo(summary.totalOutstandingExposure());
+
         assertThat(summary.isBalanced()).isTrue();
         assertThat(summary.balanceDiscrepancy()).isEqualByComparingTo("0.00");
         assertThat(summary.totalClaimsCount()).isEqualTo(7);

@@ -859,3 +859,151 @@ export interface PriorityClaimItem {
   daysOutstanding: number;
   deadline: string | null;
 }
+
+// ============================================================================
+// EDI 837P Professional Claim Export Types
+// ============================================================================
+
+export interface EdiExportKpis {
+  eligibleClaimsCount: number;
+  totalBatchesCount: number;
+  totalExportedClaimsCount: number;
+  totalAmountExported: number;
+  validationFailuresCount: number;
+}
+
+export interface EligibleClaimDto {
+  id: number;
+  claimNumber: string;
+  patientName: string;
+  patientId: number | null;
+  payerName: string;
+  payerId: number | null;
+  providerName: string;
+  providerId: number | null;
+  serviceDateFrom: string;
+  serviceDateTo: string;
+  status: ClaimStatus;
+  totalCharge: number;
+  previouslyExported: boolean;
+  lastExportedAt: string | null;
+}
+
+export interface ValidateClaimsRequest {
+  claimIds: number[];
+  payerId?: number | null;
+}
+
+export interface ClaimValidationResult {
+  claimId: number;
+  claimNumber: string;
+  valid: boolean;
+  errors: string[];
+  totalCharge: number;
+  patientName: string;
+  payerName: string;
+}
+
+export interface EdiValidationResponse {
+  allValid: boolean;
+  validCount: number;
+  errorCount: number;
+  totalCharge: number;
+  results: ClaimValidationResult[];
+}
+
+export interface Export837pRequest {
+  claimIds: number[];
+  payerId?: number | null;
+  allowRebill?: boolean;
+  notes?: string;
+}
+
+export interface ExportedClaimItem {
+  claimId: number;
+  claimNumber: string;
+  chargeAmount: number;
+  sequence: number;
+  exportedAt: string;
+}
+
+export interface EdiExportBatchSummary {
+  id: number;
+  batchNumber: string;
+  payerId: number | null;
+  payerName: string;
+  exportStatus: string;
+  claimCount: number;
+  totalBilledAmount: number;
+  fileName: string;
+  exportedAt: string;
+  createdBy: string;
+}
+
+export interface EdiExportBatchDetailResponse {
+  id: number;
+  batchNumber: string;
+  payerId: number | null;
+  payerName: string;
+  interchangeControlNumber: string;
+  groupControlNumber: string;
+  transactionControlNumber: string;
+  exportStatus: string;
+  claimCount: number;
+  totalBilledAmount: number;
+  fileName: string;
+  contentHash: string;
+  exportedAt: string;
+  createdBy: string;
+  validationSummary: string | null;
+  claims: ExportedClaimItem[];
+  downloadUrl: string;
+}
+
+// ============================================================================
+// Secure Claim Document Attachment Types
+// ============================================================================
+
+export type DocumentCategory =
+  | 'MEDICAL_REPORT'
+  | 'PRESCRIPTION'
+  | 'LAB_REPORT'
+  | 'REFERRAL'
+  | 'PRIOR_AUTHORIZATION'
+  | 'ITEMIZED_BILL'
+  | 'DENIAL_LETTER'
+  | 'APPEAL_SUPPORT'
+  | 'INSURANCE_DOCUMENT'
+  | 'DISCHARGE_SUMMARY'
+  | 'OTHER';
+
+export interface AttachmentMetadataResponse {
+  id: number;
+  claimId: number;
+  claimNumber: string;
+  documentCategory: DocumentCategory;
+  originalFileName: string;
+  contentType: string;
+  fileSize: number;
+  sha256Hash: string;
+  description?: string | null;
+  attachmentStatus: 'ACTIVE' | 'ARCHIVED';
+  securityScanStatus: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  archivedBy?: string | null;
+  archivedAt?: string | null;
+  archiveReason?: string | null;
+  downloadUrl: string;
+}
+
+export interface AttachmentAuditResponse {
+  id: number;
+  attachmentId: number;
+  claimId: number;
+  action: string;
+  actor: string;
+  actedAt: string;
+  notes?: string | null;
+}
+

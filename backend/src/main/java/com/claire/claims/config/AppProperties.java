@@ -7,9 +7,11 @@ public class AppProperties {
 
     private final Jwt jwt = new Jwt();
     private final Cors cors = new Cors();
+    private final Attachments attachments = new Attachments();
 
     public Jwt getJwt() { return jwt; }
     public Cors getCors() { return cors; }
+    public Attachments getAttachments() { return attachments; }
 
     public static class Jwt {
         /** HMAC signing secret. Must be at least 32 bytes for HS256. */
@@ -31,5 +33,15 @@ public class AppProperties {
 
         public String getAllowedOrigins() { return allowedOrigins; }
         public void setAllowedOrigins(String allowedOrigins) { this.allowedOrigins = allowedOrigins; }
+    }
+
+    public static class Attachments {
+        private String storageDir = "/app/data/attachments";
+        private long maxFileSize = 10485760;
+
+        public String getStorageDir() { return storageDir; }
+        public void setStorageDir(String storageDir) { this.storageDir = storageDir; }
+        public long getMaxFileSize() { return maxFileSize; }
+        public void setMaxFileSize(long maxFileSize) { this.maxFileSize = maxFileSize; }
     }
 }

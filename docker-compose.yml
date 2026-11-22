@@ -43,8 +43,11 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-claims}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production-this-is-a-demo-secret-key-32b}
       JWT_TTL_MINUTES: ${JWT_TTL_MINUTES:-480}
+      ATTACHMENT_STORAGE_DIR: ${ATTACHMENT_STORAGE_DIR:-/app/data/attachments}
       # nginx proxies /api, so the browser only ever sees one origin.
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+    volumes:
+      - attachments_data:/app/data/attachments
     ports:
       - "${BACKEND_PORT:-9090}:9090"
     restart: unless-stopped
@@ -62,3 +65,4 @@ services:
 
 volumes:
   db_data:
+  attachments_data:

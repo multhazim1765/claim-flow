@@ -61,36 +61,58 @@ public class AccountsReceivableService {
             BigDecimal contractualAdj = defaultZero(c.getContractualAdjustment());
 
             grossBilledCharges = grossBilledCharges.add(totalCharge);
-            patientAr = patientAr.add(patientResp);
 
             ClaimStatus status = c.getStatus();
             if (status == ClaimStatus.DENIED || status == ClaimStatus.APPEALED) {
                 disputedAr = disputedAr.add(totalCharge);
             } else if (status == ClaimStatus.SUBMITTED) {
                 unadjudicatedSubmittedExposure = unadjudicatedSubmittedExposure.add(totalCharge);
+            } else if (status == ClaimStatus.ACCEPTED) {
+                // An ACCEPTED claim is acknowledged by clearinghouse/payer but unadjudicated (no 835 remittance posted).
+                // If a fee-schedule allowed amount is present without payment, the allowed amount represents expected payer obligation,
+                // and the remaining charge represents pre-adjudication variance. Both are complete exposure until remittance posting.
+                if (allowedAmount.signum() > 0) {
+                    BigDecimal payerObligation = allowedAmount.subtract(paidAmount).subtract(patientResp);
+                    if (payerObligation.signum() > 0) {
+                        adjudicatedPayerAr = adjudicatedPayerAr.add(payerObligation);
+                    }
+                    BigDecimal preAdjudicationVariance = totalCharge.subtract(allowedAmount);
+                    if (preAdjudicationVariance.signum() > 0) {
+                        unadjudicatedSubmittedExposure = unadjudicatedSubmittedExposure.add(preAdjudicationVariance);
+                    }
+                } else {
+                    unadjudicatedSubmittedExposure = unadjudicatedSubmittedExposure.add(totalCharge);
+                }
             } else if (status == ClaimStatus.REJECTED) {
                 rejectedClaimExposure = rejectedClaimExposure.add(totalCharge);
             } else if (status == ClaimStatus.DRAFT) {
                 draftClaimExposure = draftClaimExposure.add(totalCharge);
             } else if (status == ClaimStatus.VOID) {
                 voidClaimExposure = voidClaimExposure.add(totalCharge);
-            } else if (status == ClaimStatus.ACCEPTED || status == ClaimStatus.PARTIALLY_PAID) {
+            } else if (status == ClaimStatus.PARTIALLY_PAID) {
+                // Adjudicated active claim with partial payment
                 if (allowedAmount.signum() > 0) {
                     BigDecimal payerObligation = allowedAmount.subtract(paidAmount).subtract(patientResp);
                     if (payerObligation.signum() > 0) {
                         adjudicatedPayerAr = adjudicatedPayerAr.add(payerObligation);
                     }
                 }
-            }
-
-            // Detect legacy inconsistencies
-            if (status == ClaimStatus.PAID && patientResp.signum() > 0) {
-                legacyUnclassifiedBalances = legacyUnclassifiedBalances.add(patientResp);
-            }
-            if (totalCharge.compareTo(allowedAmount) > 0 && allowedAmount.signum() > 0
-                    && contractualAdj.signum() == 0 && paidAmount.signum() > 0) {
-                BigDecimal discountVariance = totalCharge.subtract(allowedAmount);
-                legacyUnclassifiedBalances = legacyUnclassifiedBalances.add(discountVariance);
+                if (patientResp.signum() > 0) {
+                    patientAr = patientAr.add(patientResp);
+                }
+                // If gross charge exceeds allowed amount without a posted write-off (legacy variance)
+                if (totalCharge.compareTo(allowedAmount) > 0 && allowedAmount.signum() > 0 && contractualAdj.signum() == 0) {
+                    BigDecimal discountVariance = totalCharge.subtract(allowedAmount);
+                    legacyUnclassifiedBalances = legacyUnclassifiedBalances.add(discountVariance);
+                }
+            } else if (status == ClaimStatus.PAID) {
+                // Closed/Paid claim in Phase 1 legacy baseline.
+                // Any unwritten-off discount or residual patient responsibility on a PAID claim
+                // represents uncertain legacy balances, classified separately from active collectible AR.
+                BigDecimal remainingCharge = totalCharge.subtract(paidAmount).subtract(contractualAdj);
+                if (remainingCharge.signum() > 0) {
+                    legacyUnclassifiedBalances = legacyUnclassifiedBalances.add(remainingCharge);
+                }
             }
         }
 
@@ -161,8 +183,13 @@ public class AccountsReceivableService {
         BigDecimal patientAr = patientResp.setScale(2, RoundingMode.HALF_UP);
         BigDecimal disputedExposure = (claim.getStatus() == ClaimStatus.DENIED || claim.getStatus() == ClaimStatus.APPEALED)
                 ? totalCharge : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-        BigDecimal unadjudicatedExposure = (claim.getStatus() == ClaimStatus.SUBMITTED)
-                ? totalCharge : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal unadjudicatedExposure = BigDecimal.ZERO;
+        if (claim.getStatus() == ClaimStatus.SUBMITTED) {
+            unadjudicatedExposure = totalCharge;
+        } else if (claim.getStatus() == ClaimStatus.ACCEPTED) {
+            unadjudicatedExposure = allowedAmount.signum() > 0 ? totalCharge.subtract(allowedAmount).max(BigDecimal.ZERO) : totalCharge;
+        }
+        unadjudicatedExposure = unadjudicatedExposure.setScale(2, RoundingMode.HALF_UP);
 
         List<String> notes = new ArrayList<>();
         if (claim.getStatus() == ClaimStatus.PAID && patientResp.signum() > 0) {

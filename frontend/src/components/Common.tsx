@@ -101,15 +101,19 @@ export function Loading({ label = 'Loading' }: { label?: string }) {
   return <div className="loading">{label}&hellip;</div>;
 }
 
+export function Spinner({ label }: { label?: string }) {
+  return <div className="loading">{label ? `${label}…` : 'Loading…'}</div>;
+}
+
 export function ErrorAlert({ message }: { message: string | null }) {
   if (!message) return null;
   return <div className="alert alert-error">{message}</div>;
 }
 
-export function Card({ title, actions, children, tight }:
-  { title?: ReactNode; actions?: ReactNode; children: ReactNode; tight?: boolean }) {
+export function Card({ title, actions, children, tight, style }:
+  { title?: ReactNode; actions?: ReactNode; children: ReactNode; tight?: boolean; style?: React.CSSProperties }) {
   return (
-    <div className="card">
+    <div className="card" style={style}>
       {(title || actions) && (
         <div className="card-head">
           <h2>{title}</h2>

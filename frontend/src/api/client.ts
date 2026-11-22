@@ -128,3 +128,41 @@ export async function downloadCsv(path: string, query?: Options['query'], filena
   window.URL.revokeObjectURL(url);
 }
 
+export async function downloadFile(path: string, query?: Options['query'], defaultFilename = 'download'): Promise<void> {
+  const token = tokenStore.get();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const response = await fetch(`/api${path}${buildQuery(query)}`, {
+    method: 'GET',
+    headers,
+  });
+
+  if (!response.ok) {
+    let msg = `Download failed with status ${response.status}`;
+    try {
+      const errJson = await response.json();
+      if (errJson.detail) msg = errJson.detail;
+    } catch {}
+    throw new Error(msg);
+  }
+
+  let filename = defaultFilename;
+  const disposition = response.headers.get('Content-Disposition');
+  if (disposition && disposition.includes('filename=')) {
+    const match = disposition.match(/filename=["']?([^"';]+)["']?/);
+    if (match && match[1]) filename = match[1];
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+

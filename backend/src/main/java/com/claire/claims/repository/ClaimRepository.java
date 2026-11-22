@@ -32,6 +32,8 @@ public interface ClaimRepository extends JpaRepository<Claim, Long>,
 
     boolean existsByClaimNumber(String claimNumber);
 
+    long countByStatus(ClaimStatus status);
+
     /**
      * Status counts and money totals in one pass, for the dashboard.
      * Returns rows of [status, count, totalCharge, paidAmount].

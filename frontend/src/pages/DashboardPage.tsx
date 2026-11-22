@@ -177,15 +177,6 @@ export default function DashboardPage() {
                 </table>
               </Card>
             </div>
-
-            <div className="mt-16">
-              <div className="alert alert-warn">
-                <strong>Phase 1 build.</strong> AR aging, denial-rate analytics, EDI 837P export,
-                835 remittance posting, eligibility checks, appeals and attachments are specified
-                but deliberately not implemented. See the{' '}
-                <Link to="/roadmap">Phase 2 roadmap</Link>.
-              </div>
-            </div>
           </>
         )}
       </div>

@@ -31,9 +31,9 @@ export default function LoginPage() {
     <div className="login-shell">
       <div className="login-card">
         <div className="login-head">
-          <div className="brand-mark">CM</div>
-          <h1>Claim Management</h1>
-          <div className="muted" style={{ fontSize: 13 }}>Healthcare billing operations</div>
+          <div className="brand-mark">CF</div>
+          <h1>ClaimFlow</h1>
+          <div className="muted" style={{ fontSize: 13 }}>Healthcare Revenue Cycle Intelligence</div>
         </div>
 
         <form className="login-body" onSubmit={submit}>
