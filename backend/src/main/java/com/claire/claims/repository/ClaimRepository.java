@@ -51,4 +51,9 @@ public interface ClaimRepository extends JpaRepository<Claim, Long>,
     /** Highest sequence number issued this year, used to mint the next claim number. */
     @Query("SELECT MAX(c.claimNumber) FROM Claim c WHERE c.claimNumber LIKE CONCAT('CLM-', :year, '-%')")
     Optional<String> maxClaimNumberForYear(@Param("year") String year);
+
+    boolean existsByPatientId(Long patientId);
+    boolean existsByPayerId(Long payerId);
+    boolean existsByProviderId(Long providerId);
+    boolean existsByPolicyId(Long policyId);
 }

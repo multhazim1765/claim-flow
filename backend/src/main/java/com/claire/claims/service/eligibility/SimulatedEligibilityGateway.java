@@ -10,13 +10,17 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 
 /**
- * Deterministic simulated implementation of ANSI X12 270/271 real-time eligibility inquiry.
- * Generates standards-compliant synthetic benefit structures without external credentials.
+ * Educational simulated implementation of ANSI X12 270/271 real-time eligibility inquiry.
+ * Generates standards-compliant synthetic educational benefit structures without connecting to any real payer.
+ * All default benefit figures are clearly fictional demonstration archetypes and do not represent statutory determinations.
  */
 @Component
 public class SimulatedEligibilityGateway implements EligibilityGateway {
 
     private static final DateTimeFormatter D8 = DateTimeFormatter.ofPattern("yyyyMMdd");
+
+    public static final String SOURCE_SIMULATED_DEFAULT = "SIMULATED_DEFAULT";
+    public static final String SOURCE_CUSTOM_DEMO = "SIMULATED_CUSTOM_DEMO_PROFILE";
 
     @Override
     public GatewayResponse verify(Patient patient, Payer payer, InsurancePolicy policy,
@@ -30,42 +34,55 @@ public class SimulatedEligibilityGateway implements EligibilityGateway {
                 ? policy.isActiveOn(serviceDate)
                 : (serviceDate != null && !serviceDate.isBefore(effDate) && (termDate == null || !serviceDate.isAfter(termDate)));
 
-        // Payer-specific synthetic benefits
-        String planType = payer != null && payer.getPlanType() != null ? payer.getPlanType().name() : "COMMERCIAL";
+        String benefitSource;
         BigDecimal copay;
         Integer coinsurance;
         BigDecimal dedTotal;
         BigDecimal dedRemaining;
         BigDecimal oopRemaining;
 
-        switch (planType) {
-            case "MEDICARE" -> {
-                copay = new BigDecimal("20.00");
-                coinsurance = 20;
-                dedTotal = new BigDecimal("240.00");
-                dedRemaining = BigDecimal.ZERO;
-                oopRemaining = new BigDecimal("1000.00");
-            }
-            case "MEDICAID" -> {
-                copay = BigDecimal.ZERO;
-                coinsurance = 0;
-                dedTotal = BigDecimal.ZERO;
-                dedRemaining = BigDecimal.ZERO;
-                oopRemaining = BigDecimal.ZERO;
-            }
-            case "TRICARE" -> {
-                copay = new BigDecimal("25.00");
-                coinsurance = 15;
-                dedTotal = new BigDecimal("150.00");
-                dedRemaining = BigDecimal.ZERO;
-                oopRemaining = new BigDecimal("1000.00");
-            }
-            default -> { // COMMERCIAL / SELF_PAY / etc.
-                copay = new BigDecimal("35.00");
-                coinsurance = 20;
-                dedTotal = new BigDecimal("1500.00");
-                dedRemaining = new BigDecimal("340.00");
-                oopRemaining = new BigDecimal("2100.00");
+        // Custom demonstration profile has highest priority when complete
+        if (policy != null && policy.hasCompleteDemoBenefitProfile()) {
+            copay = policy.getDemoCopay();
+            coinsurance = policy.getDemoCoinsurancePercent();
+            dedTotal = policy.getDemoDeductibleTotal();
+            dedRemaining = policy.getDemoDeductibleRemaining();
+            oopRemaining = policy.getDemoOutOfPocketRemaining();
+            benefitSource = SOURCE_CUSTOM_DEMO;
+        } else {
+            benefitSource = SOURCE_SIMULATED_DEFAULT;
+            // Clearly fictional educational demonstration benefit defaults (not statutory CMS figures)
+            String planType = payer != null && payer.getPlanType() != null ? payer.getPlanType().name() : "COMMERCIAL";
+            switch (planType) {
+                case "MEDICARE" -> {
+                    // Fictional demonstration tier (illustrative only - not statutory CMS figures or universal copay)
+                    copay = new BigDecimal("30.00");
+                    coinsurance = 20;
+                    dedTotal = new BigDecimal("300.00");
+                    dedRemaining = new BigDecimal("100.00");
+                    oopRemaining = new BigDecimal("3000.00");
+                }
+                case "MEDICAID" -> {
+                    copay = BigDecimal.ZERO;
+                    coinsurance = 0;
+                    dedTotal = BigDecimal.ZERO;
+                    dedRemaining = BigDecimal.ZERO;
+                    oopRemaining = BigDecimal.ZERO;
+                }
+                case "TRICARE" -> {
+                    copay = new BigDecimal("25.00");
+                    coinsurance = 15;
+                    dedTotal = new BigDecimal("200.00");
+                    dedRemaining = new BigDecimal("50.00");
+                    oopRemaining = new BigDecimal("2000.00");
+                }
+                default -> { // COMMERCIAL / SELF_PAY / etc.
+                    copay = new BigDecimal("40.00");
+                    coinsurance = 20;
+                    dedTotal = new BigDecimal("1500.00");
+                    dedRemaining = new BigDecimal("500.00");
+                    oopRemaining = new BigDecimal("4000.00");
+                }
             }
         }
 
@@ -77,8 +94,10 @@ public class SimulatedEligibilityGateway implements EligibilityGateway {
             oopRemaining = BigDecimal.ZERO;
         }
 
+        String code = (serviceTypeCode != null && !serviceTypeCode.isBlank()) ? serviceTypeCode : "30";
+
         String rawX12 = generateSynthetic271(patient, payer, memberId, active, serviceDate,
-                effDate, termDate, copay, coinsurance, dedTotal, dedRemaining);
+                effDate, termDate, copay, coinsurance, dedTotal, dedRemaining, code);
 
         return new GatewayResponse(
                 active,
@@ -89,19 +108,21 @@ public class SimulatedEligibilityGateway implements EligibilityGateway {
                 dedTotal,
                 dedRemaining,
                 oopRemaining,
-                rawX12
+                rawX12,
+                benefitSource
         );
     }
 
     private String generateSynthetic271(Patient patient, Payer payer, String memberId, boolean active,
                                         LocalDate serviceDate, LocalDate effDate, LocalDate termDate,
                                         BigDecimal copay, Integer coinsurance, BigDecimal dedTotal,
-                                        BigDecimal dedRemaining) {
+                                        BigDecimal dedRemaining, String serviceTypeCode) {
         String today = LocalDate.now().format(D8);
         String sDate = serviceDate != null ? serviceDate.format(D8) : today;
         String eff = effDate != null ? effDate.format(D8) : today;
         String payerCode = payer != null ? payer.getPayerCode() : "PAYER";
         String eligibilityCode = active ? "1" : "6"; // 1 = Active, 6 = Inactive
+        String code = (serviceTypeCode != null && !serviceTypeCode.isBlank()) ? serviceTypeCode : "30";
 
         return "ISA*00*          *00*          *ZZ*CLAIMFLOW      *ZZ*" + payerCode + "        *"
                 + today.substring(2) + "*1200*U*00501*000000001*0*P*:~"
@@ -116,9 +137,9 @@ public class SimulatedEligibilityGateway implements EligibilityGateway {
                 + "NM1*IL*1*" + patient.getLastName().toUpperCase() + "*" + patient.getFirstName().toUpperCase() + "****MI*" + memberId + "~"
                 + "DMG*D8*" + patient.getDateOfBirth().format(D8) + "~"
                 + "DTP*291*D8*" + eff + "~"
-                + "EB*" + eligibilityCode + "**30*" + (payer != null ? payer.getName() : "") + "**" + dedTotal + "*" + dedRemaining + "~"
-                + (active ? "EB*B**30*" + (payer != null ? payer.getName() : "") + "**" + copay + "~" : "")
-                + (active ? "EB*C**30*" + (payer != null ? payer.getName() : "") + "***." + coinsurance + "~" : "")
+                + "EB*" + eligibilityCode + "**" + code + "*" + (payer != null ? payer.getName() : "") + "**" + dedTotal + "*" + dedRemaining + "~"
+                + (active ? "EB*B**" + code + "*" + (payer != null ? payer.getName() : "") + "**" + copay + "~" : "")
+                + (active ? "EB*C**" + code + "*" + (payer != null ? payer.getName() : "") + "***." + coinsurance + "~" : "")
                 + "SE*13*0001~"
                 + "GE*1*1~"
                 + "IEA*1*000000001~";

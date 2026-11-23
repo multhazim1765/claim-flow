@@ -71,6 +71,12 @@ public class EligibilityCheck {
     @Column(nullable = false)
     private boolean cached = false;
 
+    @Column(name = "benefit_source", nullable = false, length = 50)
+    private String benefitSource = "SIMULATED_DEFAULT";
+
+    @Column(name = "cache_fingerprint", length = 64)
+    private String cacheFingerprint;
+
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt = OffsetDateTime.now();
 
@@ -129,6 +135,12 @@ public class EligibilityCheck {
 
     public boolean isCached() { return cached; }
     public void setCached(boolean cached) { this.cached = cached; }
+
+    public String getBenefitSource() { return benefitSource; }
+    public void setBenefitSource(String benefitSource) { this.benefitSource = benefitSource; }
+
+    public String getCacheFingerprint() { return cacheFingerprint; }
+    public void setCacheFingerprint(String cacheFingerprint) { this.cacheFingerprint = cacheFingerprint; }
 
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }

@@ -45,6 +45,9 @@ public class Patient {
     @Column(name = "postal_code", length = 10)
     private String postalCode;
 
+    @Column(nullable = false)
+    private boolean active = true;
+
     @OneToMany(mappedBy = "patient", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<InsurancePolicy> policies = new ArrayList<>();
 
@@ -82,6 +85,8 @@ public class Patient {
     public void setState(String state) { this.state = state; }
     public String getPostalCode() { return postalCode; }
     public void setPostalCode(String postalCode) { this.postalCode = postalCode; }
+    public boolean isActive() { return active; }
+    public void setActive(boolean active) { this.active = active; }
     public List<InsurancePolicy> getPolicies() { return policies; }
     public void setPolicies(List<InsurancePolicy> policies) { this.policies = policies; }
     public OffsetDateTime getCreatedAt() { return createdAt; }

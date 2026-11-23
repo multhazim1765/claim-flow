@@ -6,4 +6,6 @@ import java.util.List;
 
 public interface InsurancePolicyRepository extends JpaRepository<InsurancePolicy, Long> {
     List<InsurancePolicy> findByPatientIdOrderByPriorityAsc(Long patientId);
+    List<InsurancePolicy> findByPatientIdAndActiveTrueOrderByPriorityAsc(Long patientId);
+    boolean existsByPatientIdAndPayerIdAndMemberId(Long patientId, Long payerId, String memberId);
 }

@@ -31,4 +31,16 @@ public class PolicyController {
     public PolicyResponse update(@PathVariable Long id, @Valid @RequestBody PolicyRequest request) {
         return service.updatePolicy(id, request);
     }
+
+    @PatchMapping("/{id}/status")
+    @PreAuthorize("hasAnyRole('ADMIN','BILLER')")
+    public PolicyResponse setStatus(@PathVariable Long id, @RequestParam boolean active) {
+        return service.setPolicyStatus(id, active);
+    }
+
+    @PostMapping("/{id}/deactivate")
+    @PreAuthorize("hasAnyRole('ADMIN','BILLER')")
+    public PolicyResponse deactivate(@PathVariable Long id) {
+        return service.setPolicyStatus(id, false);
+    }
 }

@@ -12,6 +12,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /** CRUD for patients, payers, providers and coverage. */
@@ -38,14 +39,17 @@ public class ReferenceDataService {
 
     @Transactional(readOnly = true)
     public PageResponse<PatientSummary> searchPatients(String q, Pageable pageable) {
+        return searchPatients(q, null, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<PatientSummary> searchPatients(String q, Boolean active, Pageable pageable) {
+        String term = (q != null && !q.isBlank()) ? q.trim() : null;
         Page<Patient> page;
-        if (q == null || q.isBlank()) {
-            page = patients.findAll(pageable);
+        if (term == null) {
+            page = (active == null) ? patients.findAll(pageable) : patients.findByActive(active, pageable);
         } else {
-            String term = q.trim();
-            page = patients
-                .findByLastNameContainingIgnoreCaseOrFirstNameContainingIgnoreCaseOrMrnContainingIgnoreCase(
-                    term, term, term, pageable);
+            page = patients.searchPatients(term, active, pageable);
         }
         return new PageResponse<>(page.getContent().stream().map(mapper::toPatientSummary).toList(),
                 page.getNumber(), page.getSize(), page.getTotalElements(),
@@ -74,6 +78,7 @@ public class ReferenceDataService {
         }
         Patient p = new Patient();
         copy(r, p);
+        if (r.active() != null) p.setActive(r.active());
         Patient saved = patients.save(p);
         return mapper.toPatient(saved, List.of());
     }
@@ -85,6 +90,15 @@ public class ReferenceDataService {
             throw new ConflictException("A patient with MRN " + r.mrn() + " already exists");
         }
         copy(r, p);
+        if (r.active() != null) p.setActive(r.active());
+        Patient saved = patients.save(p);
+        return mapper.toPatient(saved, policies.findByPatientIdOrderByPriorityAsc(id));
+    }
+
+    @Transactional
+    public PatientResponse setPatientStatus(Long id, boolean active) {
+        Patient p = patients.findById(id).orElseThrow(() -> new NotFoundException("Patient", id));
+        p.setActive(active);
         Patient saved = patients.save(p);
         return mapper.toPatient(saved, policies.findByPatientIdOrderByPriorityAsc(id));
     }
@@ -112,6 +126,20 @@ public class ReferenceDataService {
     }
 
     @Transactional(readOnly = true)
+    public PageResponse<PayerResponse> searchPayers(String q, Boolean active, Pageable pageable) {
+        String term = (q != null && !q.isBlank()) ? q.trim() : null;
+        Page<Payer> page;
+        if (term == null) {
+            page = (active == null) ? payers.findAll(pageable) : payers.findByActive(active, pageable);
+        } else {
+            page = payers.searchPayers(term, active, pageable);
+        }
+        return new PageResponse<>(page.getContent().stream().map(mapper::toPayer).toList(),
+                page.getNumber(), page.getSize(), page.getTotalElements(),
+                page.getTotalPages(), page.isLast());
+    }
+
+    @Transactional(readOnly = true)
     public PayerResponse getPayer(Long id) {
         return mapper.toPayer(payers.findById(id).orElseThrow(() -> new NotFoundException("Payer", id)));
     }
@@ -136,6 +164,13 @@ public class ReferenceDataService {
         return mapper.toPayer(payers.save(p));
     }
 
+    @Transactional
+    public PayerResponse setPayerStatus(Long id, boolean active) {
+        Payer p = payers.findById(id).orElseThrow(() -> new NotFoundException("Payer", id));
+        p.setActive(active);
+        return mapper.toPayer(payers.save(p));
+    }
+
     private void copy(PayerRequest r, Payer p) {
         p.setPayerCode(r.payerCode());
         p.setName(r.name());
@@ -152,6 +187,20 @@ public class ReferenceDataService {
         return providers.findAll().stream()
                 .sorted((a, b) -> a.getLastName().compareToIgnoreCase(b.getLastName()))
                 .map(mapper::toProvider).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<ProviderResponse> searchProviders(String q, Boolean active, Pageable pageable) {
+        String term = (q != null && !q.isBlank()) ? q.trim() : null;
+        Page<Provider> page;
+        if (term == null) {
+            page = (active == null) ? providers.findAll(pageable) : providers.findByActive(active, pageable);
+        } else {
+            page = providers.searchProviders(term, active, pageable);
+        }
+        return new PageResponse<>(page.getContent().stream().map(mapper::toProvider).toList(),
+                page.getNumber(), page.getSize(), page.getTotalElements(),
+                page.getTotalPages(), page.isLast());
     }
 
     @Transactional(readOnly = true)
@@ -180,6 +229,13 @@ public class ReferenceDataService {
         return mapper.toProvider(providers.save(p));
     }
 
+    @Transactional
+    public ProviderResponse setProviderStatus(Long id, boolean active) {
+        Provider p = providers.findById(id).orElseThrow(() -> new NotFoundException("Provider", id));
+        p.setActive(active);
+        return mapper.toProvider(providers.save(p));
+    }
+
     private void copy(ProviderRequest r, Provider p) {
         p.setNpi(r.npi());
         p.setFirstName(r.firstName());
@@ -194,8 +250,10 @@ public class ReferenceDataService {
     @Transactional
     public PolicyResponse createPolicy(PolicyRequest r) {
         validatePolicyDates(r);
+        validateDemoBenefits(r);
         InsurancePolicy pol = new InsurancePolicy();
         copy(r, pol);
+        if (r.active() != null) pol.setActive(r.active());
         return mapper.toPolicy(policies.save(pol));
     }
 
@@ -204,13 +262,64 @@ public class ReferenceDataService {
         InsurancePolicy pol = policies.findById(id)
                 .orElseThrow(() -> new NotFoundException("InsurancePolicy", id));
         validatePolicyDates(r);
+        validateDemoBenefits(r);
         copy(r, pol);
+        if (r.active() != null) pol.setActive(r.active());
+        return mapper.toPolicy(policies.save(pol));
+    }
+
+    @Transactional
+    public PolicyResponse setPolicyStatus(Long id, boolean active) {
+        InsurancePolicy pol = policies.findById(id)
+                .orElseThrow(() -> new NotFoundException("InsurancePolicy", id));
+        pol.setActive(active);
         return mapper.toPolicy(policies.save(pol));
     }
 
     private void validatePolicyDates(PolicyRequest r) {
         if (r.terminationDate() != null && r.terminationDate().isBefore(r.effectiveDate())) {
             throw new BusinessRuleException("terminationDate cannot be before effectiveDate");
+        }
+    }
+
+    private void validateDemoBenefits(PolicyRequest r) {
+        boolean anyProvided = r.demoCopay() != null
+                || r.demoCoinsurancePercent() != null
+                || r.demoDeductibleTotal() != null
+                || r.demoDeductibleRemaining() != null
+                || r.demoOutOfPocketRemaining() != null;
+
+        if (!anyProvided) {
+            return;
+        }
+
+        boolean allProvided = r.demoCopay() != null
+                && r.demoCoinsurancePercent() != null
+                && r.demoDeductibleTotal() != null
+                && r.demoDeductibleRemaining() != null
+                && r.demoOutOfPocketRemaining() != null;
+
+        if (!allProvided) {
+            throw new BusinessRuleException("Incomplete demo benefit profile: demoCopay, demoCoinsurancePercent, demoDeductibleTotal, demoDeductibleRemaining, and demoOutOfPocketRemaining must all be provided or all omitted.");
+        }
+
+        if (r.demoCopay().compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessRuleException("demoCopay must be non-negative");
+        }
+        if (r.demoCoinsurancePercent() < 0 || r.demoCoinsurancePercent() > 100) {
+            throw new BusinessRuleException("demoCoinsurancePercent must be between 0 and 100");
+        }
+        if (r.demoDeductibleTotal().compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessRuleException("demoDeductibleTotal must be non-negative");
+        }
+        if (r.demoDeductibleRemaining().compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessRuleException("demoDeductibleRemaining must be non-negative");
+        }
+        if (r.demoOutOfPocketRemaining().compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessRuleException("demoOutOfPocketRemaining must be non-negative");
+        }
+        if (r.demoDeductibleRemaining().compareTo(r.demoDeductibleTotal()) > 0) {
+            throw new BusinessRuleException("Remaining deductible (" + r.demoDeductibleRemaining() + ") cannot exceed total deductible (" + r.demoDeductibleTotal() + ")");
         }
     }
 
@@ -226,5 +335,10 @@ public class ReferenceDataService {
         pol.setPriority(r.priority());
         pol.setEffectiveDate(r.effectiveDate());
         pol.setTerminationDate(r.terminationDate());
+        pol.setDemoCopay(r.demoCopay());
+        pol.setDemoCoinsurancePercent(r.demoCoinsurancePercent());
+        pol.setDemoDeductibleTotal(r.demoDeductibleTotal());
+        pol.setDemoDeductibleRemaining(r.demoDeductibleRemaining());
+        pol.setDemoOutOfPocketRemaining(r.demoOutOfPocketRemaining());
     }
 }

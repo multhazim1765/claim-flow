@@ -26,8 +26,9 @@ public class PatientController {
     @GetMapping
     public PageResponse<PatientSummary> list(
             @RequestParam(required = false) String q,
+            @RequestParam(required = false) Boolean active,
             @PageableDefault(size = 20, sort = "lastName") Pageable pageable) {
-        return service.searchPatients(q, pageable);
+        return service.searchPatients(q, active, pageable);
     }
 
     @GetMapping("/{id}")
@@ -51,5 +52,23 @@ public class PatientController {
     @PreAuthorize("hasAnyRole('ADMIN','BILLER')")
     public PatientResponse update(@PathVariable Long id, @Valid @RequestBody PatientRequest request) {
         return service.updatePatient(id, request);
+    }
+
+    @PatchMapping("/{id}/status")
+    @PreAuthorize("hasAnyRole('ADMIN','BILLER')")
+    public PatientResponse setStatus(@PathVariable Long id, @RequestParam boolean active) {
+        return service.setPatientStatus(id, active);
+    }
+
+    @PostMapping("/{id}/archive")
+    @PreAuthorize("hasAnyRole('ADMIN','BILLER')")
+    public PatientResponse archive(@PathVariable Long id) {
+        return service.setPatientStatus(id, false);
+    }
+
+    @PostMapping("/{id}/reactivate")
+    @PreAuthorize("hasAnyRole('ADMIN','BILLER')")
+    public PatientResponse reactivate(@PathVariable Long id) {
+        return service.setPatientStatus(id, true);
     }
 }

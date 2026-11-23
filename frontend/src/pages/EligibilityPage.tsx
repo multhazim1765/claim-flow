@@ -6,8 +6,10 @@ import type {
   EligibilityCheckResponse,
   EligibilityHistoryItem,
   PageResponse,
+  Patient,
   PatientSummary,
   Payer,
+  Policy,
 } from '../api/types';
 import { PageHeader } from '../components/Layout';
 import {
@@ -22,13 +24,23 @@ import {
 import { useAuth } from '../auth/AuthContext';
 
 const SERVICE_TYPE_CODES = [
-  { code: '30', label: '30 - Health Benefit Plan Coverage' },
+  { code: '30', label: '30 - Health Benefit Plan Coverage (General Medical)' },
   { code: '1', label: '1 - Medical Care' },
   { code: '33', label: '33 - Chiropractic' },
   { code: '35', label: '35 - Dental Care' },
-  { code: '88', label: '88 - Pharmacy' },
+  { code: '47', label: '47 - Hospitalization' },
+  { code: '88', label: '88 - Pharmacy / Prescription Drugs' },
   { code: '98', label: '98 - Professional (Physician) Visit' },
 ];
+
+function formatCacheAge(seconds: number | null): string {
+  if (seconds == null || seconds < 5) return 'Just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  const mins = Math.floor(seconds / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  return `${hours}h ${mins % 60}m ago`;
+}
 
 export default function EligibilityPage() {
   const [searchParams] = useSearchParams();
@@ -36,12 +48,16 @@ export default function EligibilityPage() {
 
   const [patients, setPatients] = useState<PatientSummary[]>([]);
   const [payers, setPayers] = useState<Payer[]>([]);
+  const [patientPolicies, setPatientPolicies] = useState<Policy[]>([]);
 
   const [selectedPatientId, setSelectedPatientId] = useState<string>(
     searchParams.get('patientId') ?? ''
   );
   const [selectedPayerId, setSelectedPayerId] = useState<string>(
     searchParams.get('payerId') ?? ''
+  );
+  const [selectedPolicyId, setSelectedPolicyId] = useState<string>(
+    searchParams.get('policyId') ?? ''
   );
   const [serviceDate, setServiceDate] = useState<string>(
     () => new Date().toISOString().slice(0, 10)
@@ -87,6 +103,44 @@ export default function EligibilityPage() {
     };
   }, []);
 
+  // Load policies for selected patient
+  useEffect(() => {
+    if (!selectedPatientId) {
+      setPatientPolicies([]);
+      setSelectedPolicyId('');
+      return;
+    }
+    let alive = true;
+    api<Patient>(`/patients/${selectedPatientId}`)
+      .then((p) => {
+        if (!alive) return;
+        const pols = p.policies || [];
+        setPatientPolicies(pols);
+
+        const paramPolId = searchParams.get('policyId');
+        if (paramPolId && pols.some((pol) => String(pol.id) === paramPolId)) {
+          setSelectedPolicyId(paramPolId);
+          const target = pols.find((pol) => String(pol.id) === paramPolId);
+          if (target) setSelectedPayerId(String(target.payerId));
+        } else if (pols.length > 0) {
+          const match = pols.find((pol) => String(pol.payerId) === selectedPayerId) || pols[0];
+          setSelectedPolicyId(String(match.id));
+          setSelectedPayerId(String(match.payerId));
+        } else {
+          setSelectedPolicyId('');
+        }
+      })
+      .catch(() => {
+        if (alive) {
+          setPatientPolicies([]);
+          setSelectedPolicyId('');
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [selectedPatientId]);
+
   // Fetch patient history when patient changes
   const loadHistory = useCallback(async (patientId: string) => {
     if (!patientId) {
@@ -99,7 +153,6 @@ export default function EligibilityPage() {
       });
       setHistory(items);
     } catch {
-      // history load failure is non-fatal to the main page
       setHistory([]);
     }
   }, []);
@@ -122,6 +175,7 @@ export default function EligibilityPage() {
       const req: EligibilityCheckRequest = {
         patientId: Number(selectedPatientId),
         payerId: Number(selectedPayerId),
+        policyId: selectedPolicyId ? Number(selectedPolicyId) : null,
         serviceDate,
         serviceTypeCode,
         forceRefresh,
@@ -138,6 +192,28 @@ export default function EligibilityPage() {
     } finally {
       setChecking(false);
     }
+  };
+
+  const getSourceBadge = (r: EligibilityCheckResponse) => {
+    if (r.cached) {
+      return (
+        <span className="badge badge-SUBMITTED" title="Reused from 24-hour cache for identical request dimensions">
+          CACHED SIMULATED RESPONSE
+        </span>
+      );
+    }
+    if (r.benefitSource === 'SIMULATED_CUSTOM_DEMO_PROFILE') {
+      return (
+        <span className="badge badge-ACCEPTED" style={{ backgroundColor: '#7c3aed', color: '#fff' }} title="Derived from complete demo benefit profile configured on policy">
+          SIMULATED — CUSTOM DEMO PROFILE
+        </span>
+      );
+    }
+    return (
+      <span className="badge badge-ACCEPTED" title="Fictional simulation default based on payer plan type">
+        SIMULATED — DEFAULT PROFILE
+      </span>
+    );
   };
 
   if (loadingInitial) {
@@ -162,7 +238,11 @@ export default function EligibilityPage() {
               className="btn btn-secondary"
               disabled={!canWrite || checking || !selectedPatientId || !selectedPayerId}
               onClick={() => runCheck(true)}
-              title={!canWrite ? 'Read-only access (ADMIN or BILLER role required)' : undefined}
+              title={
+                !canWrite
+                  ? 'Read-only access (ADMIN or BILLER role required)'
+                  : 'Bypasses the 24-hour cache and generates a fresh simulated clearinghouse response (does not contact a live insurer)'
+              }
             >
               Force Refresh
             </button>
@@ -172,7 +252,7 @@ export default function EligibilityPage() {
               onClick={() => runCheck(false)}
               title={!canWrite ? 'Read-only access (ADMIN or BILLER role required)' : undefined}
             >
-              {checking ? 'Inquiring Payer...' : 'Check Eligibility'}
+              {checking ? 'Inquiring Clearinghouse...' : 'Check Eligibility'}
             </button>
           </div>
         }
@@ -184,6 +264,7 @@ export default function EligibilityPage() {
             <strong>SIMULATED ELIGIBILITY — NOT REAL PAYER VERIFICATION</strong>
             <div style={{ fontSize: 12, marginTop: 2 }}>
               Deterministic ANSI X12 270/271 clearinghouse gateway simulation for ClaimFlow demonstration.
+              Force Refresh generates a new simulated clearinghouse response; it does not connect to any live insurer or CMS database.
             </div>
           </div>
           <span className="pill pill-phase2">Milestone 2.1</span>
@@ -213,6 +294,32 @@ export default function EligibilityPage() {
                   ))}
                 </select>
               </div>
+
+              {patientPolicies.length > 0 && (
+                <div className="form-group">
+                  <label htmlFor="policy-select">Insurance Policy / Member</label>
+                  <select
+                    id="policy-select"
+                    className="input"
+                    value={selectedPolicyId}
+                    onChange={(e) => {
+                      setSelectedPolicyId(e.target.value);
+                      const pol = patientPolicies.find((p) => String(p.id) === e.target.value);
+                      if (pol) {
+                        setSelectedPayerId(String(pol.payerId));
+                      }
+                      setResult(null);
+                    }}
+                  >
+                    {patientPolicies.map((pol) => (
+                      <option key={pol.id} value={pol.id}>
+                        {pol.payerName} ({pol.memberId}) — {pol.priority}
+                        {pol.hasCustomDemoProfile ? ' [Custom Demo Benefits]' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div className="form-group">
                 <label htmlFor="payer-select">Payer</label>
@@ -277,15 +384,11 @@ export default function EligibilityPage() {
             title={
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                 <span>Coverage Adjudication (271 Response)</span>
-                {result && (
-                  <span className={result.cached ? 'badge badge-SUBMITTED' : 'badge badge-ACCEPTED'}>
-                    {result.cached ? 'CACHED (24h Hit)' : 'FRESH VERIFIED'}
-                  </span>
-                )}
+                {result && getSourceBadge(result)}
               </div>
             }
           >
-            {checking && <Loading label="Communicating with payer clearinghouse" />}
+            {checking && <Loading label="Communicating with simulated payer clearinghouse" />}
 
             {!checking && !result && (
               <EmptyState
@@ -314,6 +417,9 @@ export default function EligibilityPage() {
                     </strong>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                       Verified on <DateTimeText value={result.checkedAt} />
+                      {result.cached && result.cacheAgeSeconds != null && (
+                        <span> &bull; Cache age: <strong>{formatCacheAge(result.cacheAgeSeconds)}</strong></span>
+                      )}
                     </div>
                   </div>
                   <span className={result.active ? 'badge badge-PAID' : 'badge badge-VOID'}>
@@ -322,6 +428,16 @@ export default function EligibilityPage() {
                 </div>
 
                 <dl className="kv">
+                  <dt>Response Origin</dt>
+                  <dd>
+                    <strong>{result.sourceLabel ?? (result.cached ? 'CACHED SIMULATED RESPONSE' : 'SIMULATED RESPONSE')}</strong>
+                    <div className="faint" style={{ fontSize: 11 }}>
+                      {result.benefitSource === 'SIMULATED_CUSTOM_DEMO_PROFILE'
+                        ? 'Simulated from custom policy demo override profile'
+                        : 'Simulated educational archetype (not a live payer or statutory determination)'}
+                    </div>
+                  </dd>
+
                   <dt>Patient</dt>
                   <dd>
                     <Link to={`/patients/${result.patientId}`}>
@@ -333,8 +449,16 @@ export default function EligibilityPage() {
                   <dt>Payer</dt>
                   <dd>{result.payerName}</dd>
 
-                  <dt>Member ID</dt>
-                  <dd className="mono">{result.policyMemberId ?? <span className="faint">None on file</span>}</dd>
+                  <dt>Policy / Member ID</dt>
+                  <dd className="mono">
+                    {result.policyMemberId ?? <span className="faint">None on file</span>}
+                  </dd>
+
+                  <dt>Service Type</dt>
+                  <dd>
+                    Code <strong>{result.serviceTypeCode ?? serviceTypeCode}</strong> &mdash;{' '}
+                    {SERVICE_TYPE_CODES.find((s) => s.code === (result.serviceTypeCode ?? serviceTypeCode))?.label ?? 'General Medical'}
+                  </dd>
 
                   <dt>Plan Dates</dt>
                   <dd>
@@ -414,6 +538,8 @@ export default function EligibilityPage() {
                     <th>Checked At</th>
                     <th>Patient</th>
                     <th>Payer</th>
+                    <th>Policy Member</th>
+                    <th>Service Type</th>
                     <th>Service Date</th>
                     <th>Status</th>
                     <th className="num">Copay</th>
@@ -428,6 +554,8 @@ export default function EligibilityPage() {
                       <td><DateTimeText value={h.checkedAt} /></td>
                       <td>{h.patientName}</td>
                       <td>{h.payerName}</td>
+                      <td className="mono faint">{h.policyMemberId || '—'}</td>
+                      <td><span className="pill">{h.serviceTypeCode || '30'}</span></td>
                       <td><DateText value={h.serviceDate} /></td>
                       <td>
                         <span className={h.active ? 'badge badge-PAID' : 'badge badge-VOID'}>
@@ -438,7 +566,7 @@ export default function EligibilityPage() {
                       <td className="num"><Money value={h.deductibleRemaining} /></td>
                       <td>
                         <span className={h.cached ? 'pill pill-phase2' : 'pill pill-terminal'}>
-                          {h.cached ? 'Cache' : 'Gateway'}
+                          {h.cached ? 'Cached' : (h.benefitSource === 'SIMULATED_CUSTOM_DEMO_PROFILE' ? 'Custom Demo' : 'Default Demo')}
                         </span>
                       </td>
                       <td className="faint">{h.checkedBy}</td>

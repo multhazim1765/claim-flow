@@ -86,17 +86,21 @@ public class ClaimMapper {
         return new PatientResponse(p.getId(), p.getMrn(), p.getFirstName(), p.getLastName(),
                 p.getDisplayName(), p.getDateOfBirth(), p.getPhone(), p.getEmail(),
                 p.getAddressLine1(), p.getCity(), p.getState(), p.getPostalCode(),
+                p.isActive(),
                 policies == null ? List.of() : policies.stream().map(this::toPolicy).toList());
     }
 
     public PatientSummary toPatientSummary(Patient p) {
-        return new PatientSummary(p.getId(), p.getMrn(), p.getDisplayName(), p.getDateOfBirth());
+        return new PatientSummary(p.getId(), p.getMrn(), p.getDisplayName(), p.getDateOfBirth(), p.isActive());
     }
 
     public PolicyResponse toPolicy(InsurancePolicy pol) {
         return new PolicyResponse(pol.getId(), pol.getPatient().getId(), pol.getPayer().getId(),
                 pol.getPayer().getName(), pol.getMemberId(), pol.getGroupNumber(), pol.getPriority(),
-                pol.getEffectiveDate(), pol.getTerminationDate(), pol.isActiveOn(LocalDate.now()));
+                pol.getEffectiveDate(), pol.getTerminationDate(), pol.isActive(), pol.isActiveOn(LocalDate.now()),
+                pol.getDemoCopay(), pol.getDemoCoinsurancePercent(), pol.getDemoDeductibleTotal(),
+                pol.getDemoDeductibleRemaining(), pol.getDemoOutOfPocketRemaining(),
+                pol.hasCompleteDemoBenefitProfile());
     }
 
     public PayerResponse toPayer(Payer p) {

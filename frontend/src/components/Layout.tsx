@@ -41,6 +41,13 @@ export function Layout() {
           <NavLink to="/patients">Patients</NavLink>
           <NavLink to="/payers">Payers</NavLink>
           <NavLink to="/providers">Providers</NavLink>
+
+          {user?.role === 'ADMIN' && (
+            <>
+              <div className="nav-label">Administration</div>
+              <NavLink to="/users">User Management</NavLink>
+            </>
+          )}
         </nav>
 
         <div className="sidebar-footer">

@@ -16,6 +16,8 @@ public final class EligibilityDtos {
             @NotNull(message = "payerId is required")
             Long payerId,
 
+            Long policyId,
+
             @NotNull(message = "serviceDate is required")
             LocalDate serviceDate,
 
@@ -31,7 +33,9 @@ public final class EligibilityDtos {
             String patientMrn,
             Long payerId,
             String payerName,
+            Long policyId,
             String policyMemberId,
+            String serviceTypeCode,
             boolean active,
             OffsetDateTime checkedAt,
             LocalDate planBegin,
@@ -42,6 +46,9 @@ public final class EligibilityDtos {
             BigDecimal deductibleRemaining,
             BigDecimal outOfPocketRemaining,
             boolean cached,
+            String benefitSource,
+            String sourceLabel,
+            Long cacheAgeSeconds,
             String rawResponse
     ) { }
 
@@ -51,6 +58,9 @@ public final class EligibilityDtos {
             String patientName,
             Long payerId,
             String payerName,
+            Long policyId,
+            String policyMemberId,
+            String serviceTypeCode,
             LocalDate serviceDate,
             boolean active,
             OffsetDateTime checkedAt,
@@ -58,6 +68,7 @@ public final class EligibilityDtos {
             Integer coinsurancePercent,
             BigDecimal deductibleRemaining,
             boolean cached,
+            String benefitSource,
             String checkedBy
     ) { }
 }

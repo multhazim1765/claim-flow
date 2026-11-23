@@ -40,6 +40,7 @@ export const tokenStore = {
 type Options = {
   method?: string;
   body?: unknown;
+  headers?: Record<string, string>;
   query?: Record<string, string | number | boolean | undefined | null | string[]>;
 };
 
@@ -68,6 +69,7 @@ export async function api<T>(path: string, options: Options = {}): Promise<T> {
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   if (options.body !== undefined && !isFormData) headers['Content-Type'] = 'application/json';
   if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (options.headers) Object.assign(headers, options.headers);
 
   const response = await fetch(`/api${path}${buildQuery(options.query)}`, {
     method: options.method ?? 'GET',

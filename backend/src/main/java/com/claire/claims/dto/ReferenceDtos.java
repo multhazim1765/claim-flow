@@ -3,6 +3,7 @@ package com.claire.claims.dto;
 import com.claire.claims.domain.PlanType;
 import com.claire.claims.domain.PolicyPriority;
 import jakarta.validation.constraints.*;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -25,15 +26,17 @@ public final class ReferenceDtos {
             @Pattern(regexp = "^[A-Z]{2}$", message = "state must be a 2-letter code")
             String state,
             @Pattern(regexp = "^\\d{5}(-\\d{4})?$", message = "invalid ZIP code")
-            String postalCode) { }
+            String postalCode,
+            Boolean active) { }
 
     public record PatientResponse(
             Long id, String mrn, String firstName, String lastName, String displayName,
             LocalDate dateOfBirth, String phone, String email,
             String addressLine1, String city, String state, String postalCode,
+            boolean active,
             List<PolicyResponse> policies) { }
 
-    public record PatientSummary(Long id, String mrn, String displayName, LocalDate dateOfBirth) { }
+    public record PatientSummary(Long id, String mrn, String displayName, LocalDate dateOfBirth, boolean active) { }
 
     // ----- Payer ----------------------------------------------------------
 
@@ -73,10 +76,21 @@ public final class ReferenceDtos {
             @Size(max = 50) String groupNumber,
             @NotNull PolicyPriority priority,
             @NotNull LocalDate effectiveDate,
-            LocalDate terminationDate) { }
+            LocalDate terminationDate,
+            Boolean active,
+            @DecimalMin("0.00") BigDecimal demoCopay,
+            @Min(0) @Max(100) Integer demoCoinsurancePercent,
+            @DecimalMin("0.00") BigDecimal demoDeductibleTotal,
+            @DecimalMin("0.00") BigDecimal demoDeductibleRemaining,
+            @DecimalMin("0.00") BigDecimal demoOutOfPocketRemaining) { }
 
     public record PolicyResponse(
             Long id, Long patientId, Long payerId, String payerName,
             String memberId, String groupNumber, PolicyPriority priority,
-            LocalDate effectiveDate, LocalDate terminationDate, boolean activeToday) { }
+            LocalDate effectiveDate, LocalDate terminationDate, boolean active, boolean activeToday,
+            BigDecimal demoCopay, Integer demoCoinsurancePercent, BigDecimal demoDeductibleTotal,
+            BigDecimal demoDeductibleRemaining, BigDecimal demoOutOfPocketRemaining,
+            boolean hasCustomDemoProfile) { }
+
+    public record StatusChangeRequest(boolean active) { }
 }

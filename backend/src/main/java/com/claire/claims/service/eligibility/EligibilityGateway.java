@@ -25,7 +25,8 @@ public interface EligibilityGateway {
             BigDecimal deductibleTotal,
             BigDecimal deductibleRemaining,
             BigDecimal outOfPocketRemaining,
-            String rawResponse
+            String rawResponse,
+            String benefitSource
     ) {}
 }
 

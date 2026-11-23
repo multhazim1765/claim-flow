@@ -176,6 +176,7 @@ public class ClaimService {
         validateDates(request);
         claim.getLines().clear();
         claim.getDiagnoses().clear();
+        claims.flush();
         applyRequest(claim, request);
 
         return mapper.toResponse(claims.save(claim));

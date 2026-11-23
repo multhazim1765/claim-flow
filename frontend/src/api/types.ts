@@ -133,6 +133,7 @@ export interface PatientSummary {
   mrn: string;
   displayName: string;
   dateOfBirth: string;
+  active: boolean;
 }
 
 export interface Policy {
@@ -145,7 +146,14 @@ export interface Policy {
   priority: PolicyPriority;
   effectiveDate: string;
   terminationDate: string | null;
+  active: boolean;
   activeToday: boolean;
+  demoCopay?: number | null;
+  demoCoinsurancePercent?: number | null;
+  demoDeductibleTotal?: number | null;
+  demoDeductibleRemaining?: number | null;
+  demoOutOfPocketRemaining?: number | null;
+  hasCustomDemoProfile?: boolean;
 }
 
 export interface Patient {
@@ -161,7 +169,107 @@ export interface Patient {
   city: string | null;
   state: string | null;
   postalCode: string | null;
+  active: boolean;
   policies: Policy[];
+}
+
+export interface PatientInput {
+  mrn: string;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  phone?: string | null;
+  email?: string | null;
+  addressLine1?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  active?: boolean;
+}
+
+export interface PolicyInput {
+  patientId: number;
+  payerId: number;
+  memberId: string;
+  groupNumber?: string | null;
+  priority: PolicyPriority;
+  effectiveDate: string;
+  terminationDate?: string | null;
+  active?: boolean;
+  demoCopay?: number | null;
+  demoCoinsurancePercent?: number | null;
+  demoDeductibleTotal?: number | null;
+  demoDeductibleRemaining?: number | null;
+  demoOutOfPocketRemaining?: number | null;
+}
+
+export interface PayerInput {
+  payerCode: string;
+  name: string;
+  planType: PlanType;
+  claimsAddress?: string | null;
+  phone?: string | null;
+  active?: boolean;
+}
+
+export interface ProviderInput {
+  npi: string;
+  firstName: string;
+  lastName: string;
+  specialty?: string | null;
+  taxId?: string | null;
+  active?: boolean;
+}
+
+export interface UserAccount {
+  id: number;
+  username: string;
+  fullName: string;
+  role: UserRole;
+  enabled: boolean;
+  createdAt: string;
+}
+
+export interface CreateUserInput {
+  username: string;
+  password: string;
+  fullName: string;
+  role: UserRole;
+  enabled?: boolean;
+}
+
+export interface UpdateUserInput {
+  fullName: string;
+  role: UserRole;
+  enabled?: boolean;
+}
+
+export interface CsvRowValidation {
+  rowIndex: number;
+  data: Record<string, string>;
+  errors: string[];
+  valid: boolean;
+  duplicate: boolean;
+}
+
+export interface CsvPreviewResponse {
+  entityType: string;
+  totalRows: number;
+  validRows: number;
+  errorRows: number;
+  duplicateRows: number;
+  headers: string[];
+  rows: CsvRowValidation[];
+}
+
+export interface CsvImportResultResponse {
+  batchId: number;
+  entityType: string;
+  totalRows: number;
+  successCount: number;
+  errorCount: number;
+  status: 'COMPLETED' | 'FAILED' | 'PARTIAL';
+  errorMessages: string[];
 }
 
 export interface Payer {
@@ -229,6 +337,7 @@ export interface StatusTransitionMap {
 export interface EligibilityCheckRequest {
   patientId: number;
   payerId: number;
+  policyId?: number | null;
   serviceDate: string;
   serviceTypeCode?: string;
   forceRefresh?: boolean;
@@ -241,7 +350,9 @@ export interface EligibilityCheckResponse {
   patientMrn: string;
   payerId: number;
   payerName: string;
+  policyId: number | null;
   policyMemberId: string | null;
+  serviceTypeCode: string | null;
   active: boolean;
   checkedAt: string;
   planBegin: string | null;
@@ -252,6 +363,9 @@ export interface EligibilityCheckResponse {
   deductibleRemaining: number | null;
   outOfPocketRemaining: number | null;
   cached: boolean;
+  benefitSource: string | null;
+  sourceLabel: string | null;
+  cacheAgeSeconds: number | null;
   rawResponse: string | null;
 }
 
@@ -261,6 +375,9 @@ export interface EligibilityHistoryItem {
   patientName: string;
   payerId: number;
   payerName: string;
+  policyId: number | null;
+  policyMemberId: string | null;
+  serviceTypeCode: string | null;
   serviceDate: string;
   active: boolean;
   checkedAt: string;
@@ -268,6 +385,7 @@ export interface EligibilityHistoryItem {
   coinsurancePercent: number | null;
   deductibleRemaining: number | null;
   cached: boolean;
+  benefitSource: string | null;
   checkedBy: string;
 }
 

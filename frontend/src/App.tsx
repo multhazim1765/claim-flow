@@ -18,6 +18,7 @@ import RemittanceExceptionsPage from './pages/RemittanceExceptionsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import ClaimExportPage from './pages/ClaimExportPage';
 import DocumentsPage from './pages/DocumentsPage';
+import UsersPage from './pages/UsersPage';
 import type { ReactElement } from 'react';
 
 function RequireAuth({ children }: { children: ReactElement }) {
@@ -62,6 +63,11 @@ function Router() {
         <Route path="/claim-exports" element={<ClaimExportPage />} />
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/users" element={
+          <RequireRole roles={['ADMIN']}>
+            <UsersPage />
+          </RequireRole>
+        } />
         {/* Safe redirection of legacy /roadmap route */}
         <Route path="/roadmap" element={<Navigate to="/" replace />} />
       </Route>
